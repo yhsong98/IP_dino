@@ -90,7 +90,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, loa
             y_descs_coor, x_descs_coor = idx // num_patches_b[1], idx % num_patches_b[1]
             center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
                       (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-            patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
+            patch = plt.Circle((center[0].cpu().numpy(),center[1].cpu().numpy()), radius, color=(1, 0, 0, 0.75))
             axes[1][0].add_patch(patch)
             visible_patches.append(patch)
         plt.draw()
@@ -168,12 +168,12 @@ def str2bool(v):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="images/pipette/source2.jpg", help='Path to the first image')
-    parser.add_argument('--image_b_folder', type=str, default="images/pipette/", help='Path to the second image.')
+    parser.add_argument('--image_a', type=str, default="../data/images/cat_face/cat5.jpg", help='Path to the first image')
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/cat_face/", help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")
-    parser.add_argument('--model_type', default='dino_vitb8', type=str,
+    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
                               Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")

@@ -3,7 +3,7 @@ import PIL.Image
 import numpy
 import torch
 from pathlib import Path
-from extractor import ViTExtractor
+from extractor_dinov2 import ViTExtractor
 from tqdm import tqdm
 import numpy as np
 from PIL import Image
@@ -119,12 +119,12 @@ def str2bool(v):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate ViT Descriptor PCA.')
-    parser.add_argument('--root_dir', type=str, default='images/cat_face', help='The root dir of images.')
-    parser.add_argument('--save_dir', type=str, default='images/pca/cat_face', help='The root save dir for results.')
+    parser.add_argument('--root_dir', type=str, default='../data/images/cat_face', help='The root dir of images.')
+    parser.add_argument('--save_dir', type=str, default='../data/images/pca/cat_face', help='The root save dir for results.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")
-    parser.add_argument('--model_type', default='dino_vits8', type=str,
+    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
                               Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
@@ -135,7 +135,7 @@ if __name__ == "__main__":
     parser.add_argument('--n_components', default=3, type=int, help="number of pca components to produce.")
     parser.add_argument('--last_components_rgb', default='True', type=str2bool, help="save last components as rgb image.")
     parser.add_argument('--save_resized', default='True', type=str2bool, help="If true save pca in image resolution.")
-    parser.add_argument('--all_together', default='True', type=str2bool, help="If true apply pca on all images together.")
+    parser.add_argument('--all_together', default='False', type=str2bool, help="If true apply pca on all images together.")
 
     args = parser.parse_args()
 

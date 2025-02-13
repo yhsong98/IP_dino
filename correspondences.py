@@ -1,7 +1,7 @@
 import argparse
 import torch
 from pathlib import Path
-from extractor import ViTExtractor
+from extractor_dinov2 import ViTExtractor
 from tqdm import tqdm
 import numpy as np
 from sklearn.cluster import KMeans
@@ -12,8 +12,8 @@ from typing import List, Tuple
 
 
 def find_correspondences(image_path1: str, image_path2: str, num_pairs: int = 10, load_size: int = 224, layer: int = 9,
-                         facet: str = 'key', bin: bool = True, thresh: float = 0.05, model_type: str = 'dino_vits8',
-                         stride: int = 4) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]],
+                         facet: str = 'key', bin: bool = True, thresh: float = 0.05, model_type: str = 'dinov2_vits14',
+                         stride: int = 14) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]],
                                                                               Image.Image, Image.Image]:
     """
     finding point correspondences between two images.
@@ -179,20 +179,20 @@ def str2bool(v):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate ViT Descriptor point correspondences.')
-    parser.add_argument('--root_dir', type=str, required=True, help='The root dir of image pairs.')
-    parser.add_argument('--save_dir', type=str, required=True, help='The root save dir for image pairs results.')
+    parser.add_argument('--root_dir', type=str, default='../data/images/cat_face/', help='The root dir of image pairs.')
+    parser.add_argument('--save_dir', type=str, default='../data/images/correspondence/cat_face/', help='The root save dir for image pairs results.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                  small stride -> higher resolution.""")
-    parser.add_argument('--model_type', default='dino_vits8', type=str,
+    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
                            Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
                            vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
     parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
                                                                     options: ['key' | 'query' | 'value' | 'token']""")
-    parser.add_argument('--layer', default=9, type=int, help="layer to create descriptors from.")
+    parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='True', type=str2bool, help="create a binned descriptor if True.")
-    parser.add_argument('--thresh', default=0.05, type=float, help='saliency maps threshold to distinguish fg / bg.')
+    parser.add_argument('--thresh', default=0.01, type=float, help='saliency maps threshold to distinguish fg / bg.')
     parser.add_argument('--num_pairs', default=10, type=int, help='Final number of correspondences.')
 
     args = parser.parse_args()
@@ -227,4 +227,4 @@ if __name__ == "__main__":
             fig1, fig2 = draw_correspondences(points1, points2, image1_pil, image2_pil)
             fig1.savefig(curr_save_dir / f'{Path(curr_images[0]).stem}_corresp.png', bbox_inches='tight', pad_inches=0)
             fig2.savefig(curr_save_dir / f'{Path(curr_images[1]).stem}_corresp.png', bbox_inches='tight', pad_inches=0)
-            plt.close('all')
+            #plt.close('all')

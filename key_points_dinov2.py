@@ -1,13 +1,12 @@
 import argparse
 import torch
 from sklearn.cluster import DBSCAN
-from extractor import ViTExtractor
+from extractor_dinov2 import ViTExtractor
 import numpy as np
 import matplotlib.pyplot as plt
-import os
 
-import matplotlib as mpl
-mpl.use('Qt5Agg')
+import matplotlib
+matplotlib.use('Qt5Agg')
 
 def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """ Computes cosine similarity between all possible pairs in two sets of vectors.
@@ -26,7 +25,7 @@ def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 
 def show_similarity_interactive(image_path_a: str, image_path_b: str, load_size: int = 224, layer: int = 11,
-                                facet: str = 'key', bin: bool = False, stride: int = 4, model_type: str = 'dino_vits8',
+                                facet: str = 'key', bin: bool = False, stride: int = 4, model_type: str = 'dinov2_vits14',
                                 num_sim_patches: int = 1):
     """
      finding similarity between a descriptor in one image to the all descriptors in the other image.
@@ -43,7 +42,7 @@ def show_similarity_interactive(image_path_a: str, image_path_b: str, load_size:
     # extract descriptors
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
-    patch_size = extractor.model.patch_embed.patch_size
+    patch_size = extractor.model.patch_embed.patch_size[0]
     image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     image_batch_b, image_pil_b = extractor.preprocess(image_path_b, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
@@ -88,7 +87,7 @@ def show_similarity_interactive(image_path_a: str, image_path_b: str, load_size:
         y_descs_coor, x_descs_coor = torch.div(idx, num_patches_b[1], rounding_mode='floor'), idx % num_patches_b[1]
         center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
                   (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-        patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
+        patch = plt.Circle((center[0].cpu().numpy(),center[1].cpu().numpy()), radius, color=(1, 0, 0, 0.75))
         axes[1][0].add_patch(patch)
         visible_patches.append(patch)
     plt.draw()
@@ -256,12 +255,12 @@ def classify_landmark(candidate_points, eps=20, min_samples=1):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="images/cat_face/cat_5.jpg", help='Path to the first image')
-    parser.add_argument('--image_b', type=str, default="images/cat_face/cat2.jpg", help='Path to the second image.')
+    parser.add_argument('--image_a', type=str, default="../data/images/cat_face/cat_5.jpg", help='Path to the first image')
+    parser.add_argument('--image_b', type=str, default="../data/images/dog_rotated/cat1.jpg", help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")
-    parser.add_argument('--model_type', default='dino_vits8', type=str,
+    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
                               Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
@@ -269,7 +268,7 @@ if __name__ == "__main__":
                                                                        options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
-    parser.add_argument('--num_sim_patches', default=20, type=int, help="number of closest patches to show.")
+    parser.add_argument('--num_sim_patches', default=10, type=int, help="number of closest patches to show.")
 
     args = parser.parse_args()
 
