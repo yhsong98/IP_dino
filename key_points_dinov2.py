@@ -218,45 +218,12 @@ def classify_landmark(candidate_points, eps=20, min_samples=1):
 
     return {"label": label, "num_clusters": num_clusters}
 
-# def classify_landmark(matched_points, eps=10, min_samples=2):
-#     """
-#     Classifies whether a point is a landmark based on spatial clustering of matches.
-#
-#     :param matched_points: List of (x, y) coordinates in Image B.
-#     :param eps: DBSCAN clustering threshold.
-#     :param min_samples: Minimum number of points in a cluster.
-#     :return: "Landmark" or "Non-Landmark"
-#     """
-#     matched_points = np.asarray(matched_points)
-#     _, num_clusters = cluster_matched_points(matched_points, eps, min_samples)
-#
-#     if num_clusters == 1:
-#         return True
-#     else:
-#         return False
-#
-# def cluster_matched_points(matched_points, eps=5, min_samples=1):
-#     """
-#     Clusters matched points using DBSCAN.
-#
-#     :param matched_points: List of (x, y) coordinates in Image B.
-#     :param eps: DBSCAN epsilon parameter (maximum distance for points to be in same cluster).
-#     :param min_samples: Minimum points required to form a cluster.
-#     :return: Cluster labels and number of clusters.
-#     """
-#     matched_points = np.array(matched_points)
-#     clustering = DBSCAN(eps=eps, min_samples=min_samples).fit(matched_points)
-#     labels = clustering.labels_
-#
-#     # Count number of unique clusters (ignoring noise points labeled as -1)
-#     num_clusters = len(set(labels)) - (1 if -1 in labels else 0)
-#
-#     return labels, num_clusters
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="../data/images/cat_face/cat_5.jpg", help='Path to the first image')
-    parser.add_argument('--image_b', type=str, default="../data/images/dog_rotated/cat1.jpg", help='Path to the second image.')
+    parser.add_argument('--image_a', type=str, default="../data/images/horse/horse_1.png", help='Path to the first image')
+    parser.add_argument('--image_b', type=str, default="../data/images/horse/horse_2.png", help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")
@@ -268,7 +235,7 @@ if __name__ == "__main__":
                                                                        options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
-    parser.add_argument('--num_sim_patches', default=10, type=int, help="number of closest patches to show.")
+    parser.add_argument('--num_sim_patches', default=1, type=int, help="number of closest patches to show.")
 
     args = parser.parse_args()
 

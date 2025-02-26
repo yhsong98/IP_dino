@@ -1,7 +1,7 @@
 import argparse
 import os
 import torch
-from extractor import ViTExtractor
+from extractor_dinov2 import ViTExtractor
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
@@ -44,7 +44,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, num
     color_map = ['r','g','b','c','m','y','k','w']
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
-    patch_size = extractor.model.patch_embed.patch_size
+    patch_size = extractor.model.patch_embed.patch_size[0]
     image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
     num_patches_a, load_size_a = extractor.num_patches, extractor.load_size
@@ -93,7 +93,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, num
             y_descs_coor, x_descs_coor = idx // num_patches_b[1], idx % num_patches_b[1]
             center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
                       (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-            patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
+            patch = plt.Circle((center[0].cpu().numpy(),center[1].cpu().numpy()), radius, color=(1, 0, 0, 0.75))
             axes[1][0].add_patch(patch)
             visible_patches.append(patch)
         plt.draw()
@@ -217,12 +217,12 @@ def str2bool(v):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="images/landmark_files/lab_pipette.png", help='Path to the first image')
-    parser.add_argument('--image_b_folder', type=str, default="LabData/3D dataset/semantic segmentation dataset/images/", help='Path to the second image.')
+    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/skull.png", help='Path to the first image')
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/skull", help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")
-    parser.add_argument('--model_type', default='dino_vits8', type=str,
+    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
                               Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
     parser.add_argument('--num_sim_patches', default=1, type=int, help="number of closest patches to show.")
-    parser.add_argument('--num_ref_points', default=20, type=int, help="number of reference points to show.")
+    parser.add_argument('--num_ref_points', default=30, type=int, help="number of reference points to show.")
 
     args = parser.parse_args()
 

@@ -1,7 +1,7 @@
 import argparse
 import os
 import torch
-from extractor import ViTExtractor
+from extractor_dinov2 import ViTExtractor
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
@@ -41,7 +41,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, loa
     # extract descriptors
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
-    patch_size = extractor.model.patch_embed.patch_size
+    patch_size = extractor.model.patch_embed.patch_size[0]
     image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
     num_patches_a, load_size_a = extractor.num_patches, extractor.load_size
@@ -141,7 +141,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, loa
                 y_descs_coor, x_descs_coor = idx // num_patches_b[1], idx % num_patches_b[1]
                 center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
                           (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-                patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
+                patch = plt.Circle((center[0].cpu().numpy(),center[1].cpu().numpy()), radius, color=(1, 0, 0, 0.75))
                 axes[1][0].add_patch(patch)
                 visible_patches.append(patch)
             plt.draw()
@@ -168,8 +168,8 @@ def str2bool(v):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="../data/images/cat_face/cat5.jpg", help='Path to the first image')
-    parser.add_argument('--image_b_folder', type=str, default="../data/images/cat_face/", help='Path to the second image.')
+    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/cat_5.jpg", help='Path to the first image')
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/wild_rotated/", help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")

@@ -1,6 +1,5 @@
 import argparse
 import torch
-import torchvision.transforms
 from torch import nn
 from torchvision import transforms
 import torch.nn.modules.utils as nn_utils
@@ -11,6 +10,7 @@ from pathlib import Path
 from typing import Union, List, Tuple
 from PIL import Image
 import cv2
+import numpy as np
 
 
 class ViTExtractor:
@@ -44,7 +44,7 @@ class ViTExtractor:
         self.model = ViTExtractor.patch_vit_resolution(self.model, stride=stride)
         self.model.eval()
         self.model.to(self.device)
-        self.p = self.model.patch_embed.patch_size[0]
+        self.p = self.model.patch_embed.patch_size[0] if isinstance(self.model.patch_embed.patch_size,tuple) else self.model.patch_embed.patch_size
         self.stride = self.model.patch_embed.proj.stride
 
         self.mean = (0.485, 0.456, 0.406) if "dino" in self.model_type else (0.5, 0.5, 0.5)
@@ -65,7 +65,10 @@ class ViTExtractor:
         """
         if 'dinov2' in model_type:
             model = torch.hub.load('facebookresearch/dinov2', model_type)
-        else:  # model from timm -- load weights from timm to dino model (enables working on arbitrary size images).
+        elif 'dino' in model_type:
+            model = torch.hub.load('facebookresearch/dino:main', model_type)
+        else:
+            # model from timm -- load weights from timm to dino model (enables working on arbitrary size images).
             temp_model = timm.create_model(model_type, pretrained=True)
             model_type_dict = {
                 'vit_small_patch16_224': 'dino_vits16',
@@ -73,7 +76,7 @@ class ViTExtractor:
                 'vit_base_patch16_224': 'dino_vitb16',
                 'vit_base_patch8_224': 'dino_vitb8'
             }
-            model = torch.hub.load('facebookresearch/dinov2', model_type_dict[model_type])
+            model = torch.hub.load('facebookresearch/dino:main', model_type_dict[model_type])
             temp_state_dict = temp_model.state_dict()
             del temp_state_dict['head.weight']
             del temp_state_dict['head.bias']
@@ -124,7 +127,8 @@ class ViTExtractor:
         :param stride: the new stride parameter.
         :return: the adjusted model
         """
-        patch_size = model.patch_embed.patch_size[0]
+
+        patch_size = model.patch_embed.patch_size[0] if isinstance(model.patch_embed.patch_size,tuple) else model.patch_embed.patch_size
         if stride == patch_size:  # nothing to do
             return model
 
@@ -156,24 +160,16 @@ class ViTExtractor:
             transforms.ToTensor(),
             transforms.Normalize(mean=self.mean, std=self.std)
         ])
+        rotate_angles = [angle for angle in np.linspace(0, 360, rotate, endpoint=False)[1:]]
+
         if rotate:
-            pil_image_r0 = pil_image
-            pil_image_r1 = pil_image.rotate(90)
-            pil_image_r2 = pil_image.rotate(180)
-            pil_image_r3 = pil_image.rotate(270)
-
-            # if load_size is not None:
-            #     pil_image_r0 = transforms.Resize(load_size, interpolation=transforms.InterpolationMode.LANCZOS)(pil_image)
-            #     pil_image_r1 = transforms.Resize(load_size, interpolation=transforms.InterpolationMode.LANCZOS)(pil_image_r1)
-            #     pil_image_r2 = transforms.Resize(load_size, interpolation=transforms.InterpolationMode.LANCZOS)(pil_image_r2)
-            #     pil_image_r3 = transforms.Resize(load_size, interpolation=transforms.InterpolationMode.LANCZOS)(pil_image_r3)
-
-            prep_img_r0 = prep(pil_image_r0)[None, ...]
-            prep_img_r1 = prep(pil_image_r1)[None, ...]
-            prep_img_r2 = prep(pil_image_r2)[None, ...]
-            prep_img_r3 = prep(pil_image_r3)[None, ...]
-
-            return [[prep_img_r0, pil_image_r0],[prep_img_r1, pil_image_r1],[prep_img_r2, pil_image_r2],[prep_img_r3, pil_image_r3]]
+            pil_images = [pil_image]
+            for angle in rotate_angles:
+                pil_images.append(pil_image.rotate(angle))
+            prep_images = []
+            for pil_image in pil_images:
+                prep_images.append(prep(pil_image)[None, ...])
+            return list(zip(prep_images, pil_images))
         else:
             if load_size is not None:
                 #pil_image = transforms.Resize(load_size, interpolation=transforms.InterpolationMode.LANCZOS)(pil_image)

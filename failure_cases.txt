@@ -1,0 +1,58 @@
+image_00002.png: Inherent Failure
+image_00003.png: Mistaken by Shapesim
+image_00007.png: Mistaken by Shapesim
+image_00010.png: Mistaken by Shapesim
+image_00012.png: Inherent Failure
+image_00013.png: Mistaken by Shapesim
+image_00016.png: Inherent Failure
+image_00025.png: Inherent Failure
+image_00028.png: Mistaken by Shapesim
+image_00032.png: Mistaken by Shapesim
+image_00035.png: Inherent Failure
+image_00037.png: Inherent Failure
+image_00046.png: Inherent Failure
+image_00061.png: Mistaken by Shapesim
+image_00081.png: Inherent Failure
+image_00082.png: Inherent Failure
+image_00083.png: Mistaken by Shapesim
+image_00084.png: Inherent Failure
+image_00086.png: Mistaken by Shapesim
+image_00087.png: Inherent Failure
+image_00089.png: Inherent Failure
+image_00090.png: Inherent Failure
+image_00091.png: Inherent Failure
+image_00092.png: Inherent Failure
+image_00093.png: Inherent Failure
+image_00094.png: Inherent Failure
+image_00095.png: Inherent Failure
+image_00096.png: Inherent Failure
+image_00097.png: Inherent Failure
+image_00098.png: Mistaken by Shapesim
+image_00099.png: Mistaken by Shapesim
+image_00102.png: Mistaken by Shapesim
+image_00109.png: Mistaken by Shapesim
+image_00110.png: Inherent Failure
+image_00111.png: Mistaken by Shapesim
+image_00112.png: Mistaken by Shapesim
+image_00115.png: Inherent Failure
+image_00116.png: Inherent Failure
+image_00117.png: Mistaken by Shapesim
+image_00118.png: Inherent Failure
+image_00119.png: Mistaken by Shapesim
+image_00120.png: Mistaken by Shapesim
+image_00121.png: Inherent Failure
+image_00122.png: Mistaken by Shapesim
+image_00124.png: Inherent Failure
+image_00126.png: Inherent Failure
+image_00128.png: Inherent Failure
+image_00129.png: Inherent Failure
+image_00132.png: Inherent Failure
+image_00133.png: Mistaken by Shapesim
+image_00137.png: Inherent Failure
+image_00138.png: Inherent Failure
+image_00139.png: Inherent Failure
+image_00140.png: Inherent Failure
+image_00142.png: Inherent Failure
+image_00143.png: Inherent Failure
+image_00144.png: Inherent Failure
+image_00145.png: Mistaken by Shapesim

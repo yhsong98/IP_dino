@@ -11,6 +11,7 @@ import csv
 import cv2
 from PIL import Image
 from sklearn.decomposition import PCA
+from scipy.spatial import procrustes
 from scipy.spatial.distance import directed_hausdorff
 import heapq
 matplotlib.use('Qt5Agg')
@@ -33,7 +34,7 @@ def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, landmarks, num_ref_points: int, load_size: int = 224, layer: int = 11,
                                 facet: str = 'key', bin: bool = False, stride: int = 14, model_type: str = 'dinov2_vits14',
-                                num_sim_patches: int = 1, sim_threshold: float = 0.7, num_rotation: int=4):
+                                num_sim_patches: int = 1, sim_threshold: float = 0.7):
     """
      finding similarity between a descriptor in one image to the all descriptors in the other image.
      :param image_path_a: path to first image.
@@ -55,7 +56,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, lan
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
     patch_size = extractor.model.patch_embed.patch_size[0]
-    image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size,rotate=False)
+    image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
     num_patches_a, load_size_a = extractor.num_patches, extractor.load_size
     fig, axes = plt.subplots(2, 2, figsize=(15, 15))
@@ -65,7 +66,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, lan
     for image_path in sorted(images):
         start=time.time()
         image_path_b = os.path.join(image_folder_path_b, image_path)
-        batch_b_rotations = extractor.preprocess(image_path_b, load_size, rotate=4)
+        batch_b_rotations = extractor.preprocess(image_path_b, load_size, rotate=True)
 
         descs_b_s = []
         num_patches_b_rotations, load_size_b_rotations = [], []
@@ -135,8 +136,11 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, lan
         scores_ds =[]
         for a_landmark_points, b_landmark_points in zip(a_landmark_points_rotations,b_landmark_points_rotations):
             num_landmark_points = len(b_landmark_points)
-            directional_sim = compare_directions(a_landmark_points, b_landmark_points)
-            directional_sim = directional_sim if not np.isnan(directional_sim) else 0
+            try:
+                directional_sim = procrustes_analysis(a_landmark_points, b_landmark_points)
+            except ValueError:
+                directional_sim = 1.1
+            #directional_sim = directional_sim if not np.isnan(directional_sim) else 0
             print("[", num_landmark_points,",",directional_sim,"] ",end="")
             scores_num.append(len(b_landmark_points))
             scores_ds.append(directional_sim)
@@ -148,7 +152,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, lan
             if curr_max < num*1.1:
                 candidates[id]=ds
         try:
-            fittest_index = max(candidates, key=candidates.get)
+            fittest_index = min(candidates, key=candidates.get)
         except ValueError:
             fittest_index = 0
 
@@ -328,19 +332,61 @@ def robust_fit_and_draw_line(image, points, threshold=15, line_color=(0, 255, 0)
 
     return output_image
 
-def compute_hausdorff_distance(sequence1, sequence2):
-    """
-    Compute the Hausdorff distance between two sequences of points.
 
-    :param sequence1: Array of (x, y) coordinates for sequence 1.
-    :param sequence2: Array of (x, y) coordinates for sequence 2.
+def procrustes_analysis(points_A, points_B):
+    """
+    Perform Procrustes analysis to measure shape similarity.
+
+    :param points_A: Array of (x, y) coordinates for reference shape.
+    :param points_B: Array of (x, y) coordinates for detected shape.
+    :return: Procrustes distance (lower means more similar).
+    """
+    # Ensure points are NumPy arrays
+    points_A = np.array(points_A)
+    points_B = np.array(points_B)
+
+    # Perform Procrustes alignment
+    mtx1, mtx2, disparity = procrustes(points_A, points_B)
+    return disparity
+
+
+def hausdorff_distance(points_A, points_B):
+    """
+    Compute Hausdorff distance between two point sets.
+
+    :param points_A: Array of (x, y) coordinates for reference shape.
+    :param points_B: Array of (x, y) coordinates for detected shape.
     :return: Hausdorff distance (lower means more similar).
     """
-    sequence1 = np.array(sequence1)
-    sequence2 = np.array(sequence2)
-    forward_distance = directed_hausdorff(sequence1, sequence2)[0]
-    backward_distance = directed_hausdorff(sequence2, sequence1)[0]
-    return max(forward_distance, backward_distance)
+    points_A = np.array(points_A)
+    points_B = np.array(points_B)
+
+    forward_dist = directed_hausdorff(points_A, points_B)[0]
+    backward_dist = directed_hausdorff(points_B, points_A)[0]
+    return max(forward_dist, backward_dist)
+
+
+def visualize_shapes(points_A, points_B):
+    """
+    Plot the reference and detected shapes for visual comparison.
+    """
+    points_A = np.array(points_A)
+    points_B = np.array(points_B)
+
+    plt.figure(figsize=(8, 6))
+    plt.scatter(points_A[:, 0], points_A[:, 1], color='blue', label="Reference Points")
+    plt.scatter(points_B[:, 0], points_B[:, 1], color='red', label="Detected Points")
+
+    # Connect corresponding points
+    for i in range(min(len(points_A), len(points_B))):
+        plt.plot([points_A[i, 0], points_B[i, 0]], [points_A[i, 1], points_B[i, 1]], 'k--', alpha=0.5)
+
+    plt.legend()
+    plt.title("Shape Comparison")
+    plt.xlabel("X")
+    plt.ylabel("Y")
+    plt.gca().invert_yaxis()  # To match image coordinate systems
+    plt.show()
 
 def check_sequence_direction(sequence1, sequence2, threshold=0.8):
     """
@@ -455,7 +501,6 @@ def compare_directions(seq_a, seq_b):
 
 
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
     parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/skull.png", help='Path to the first image')
@@ -463,7 +508,7 @@ if __name__ == "__main__":
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")
-    parser.add_argument('--model_type', default='dinov2_vitb14', type=str,
+    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
                               Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
@@ -473,9 +518,8 @@ if __name__ == "__main__":
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
     parser.add_argument('--num_sim_patches', default=1, type=int, help="number of closest patches to show.")
     parser.add_argument('--num_ref_points', default=30, type=int, help="number of reference points to show.")
-    parser.add_argument('--landmark_file', default='../data/images/landmark_files/skull_landmarks.csv', type=str, help="landmarks file.")
-    parser.add_argument('--num_rotation', default=4, type=int, help="number of test rotations, 4 or 8")
-    parser.add_argument('--threadshold', default=0.90, type=float, help="similarity threshold")
+    parser.add_argument('--landmark_file', default='../data/images/landmark_files/skull_cross_landmarks.csv', type=str, help="landmarks file.")
+    parser.add_argument('--threadshold', default=0.95, type=float, help="similarity threshold")
     args = parser.parse_args()
 
     with torch.no_grad():
@@ -487,4 +531,4 @@ if __name__ == "__main__":
 
         show_similarity_interactive(args.image_a, args.image_b_folder, landmarks, args.num_ref_points, args.load_size, args.layer,
                                     args.facet, args.bin,
-                                    args.stride, args.model_type, args.num_sim_patches, args.threadshold,args.num_rotation)
+                                    args.stride, args.model_type, args.num_sim_patches, args.threadshold)

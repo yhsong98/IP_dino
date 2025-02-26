@@ -4,7 +4,7 @@ import cv2
 import csv
 
 
-def compute_vector_field_diagonal(landmarks, radius=50):
+def compute_vector_field_diagonal(landmarks, radius=500):
     """
     Computes the vector field for each landmark considering diagonal quadrants.
 
@@ -20,30 +20,59 @@ def compute_vector_field_diagonal(landmarks, radius=50):
     num_points = len(landmarks)
     Fx = np.zeros(num_points)
     Fy = np.zeros(num_points)
-    LRTB_counts = []  # Store counts for visualization
+    #LRTB_counts = []  # Store counts for visualization
 
     for i, (x_i, y_i) in enumerate(landmarks):
         # Get all neighboring points within the radius
-        neighbors = landmarks[np.sqrt((landmarks[:, 0] - x_i) ** 2 + (landmarks[:, 1] - y_i) ** 2) <= radius]
+        neighbors = landmarks[(np.sqrt((landmarks[:, 0] - x_i) ** 2 + (landmarks[:, 1] - y_i) ** 2)) <= radius]
 
         # Exclude the current point
         neighbors = neighbors[(neighbors[:, 0] != x_i) | (neighbors[:, 1] != y_i)]
 
         # Count points in diagonal quadrants
-        L = np.sum((neighbors[:, 0] < x_i) & (neighbors[:, 1] > y_i))  # Top-left (↖)
-        R = np.sum((neighbors[:, 0] > x_i) & (neighbors[:, 1] < y_i))  # Bottom-right (↘)
-        T = np.sum((neighbors[:, 0] > x_i) & (neighbors[:, 1] > y_i))  # Top-right (↗)
-        B = np.sum((neighbors[:, 0] < x_i) & (neighbors[:, 1] < y_i))  # Bottom-left (↙)
+        # L = np.sum((neighbors[:, 0] < x_i) & (neighbors[:, 1] > y_i))  # Top-left (↖)
+        # R = np.sum((neighbors[:, 0] > x_i) & (neighbors[:, 1] < y_i))  # Bottom-right (↘)
+        # T = np.sum((neighbors[:, 0] > x_i) & (neighbors[:, 1] > y_i))  # Top-right (↗)
+        # B = np.sum((neighbors[:, 0] < x_i) & (neighbors[:, 1] < y_i))  # Bottom-left (↙)
+
+        count = [0, 0, 0, 0]
+        for neighbor in neighbors:
+            id = classify_vector_direction(neighbor-[x_i,y_i])
+            count[id]+=1
+
 
         # Compute vector components
-        Fx[i] = L - R
-        Fy[i] = T - B
+        Fx[i] = count[2] - count[0]
+        Fy[i] = count[1] - count[3]
 
         # Store counts for visualization
-        LRTB_counts.append({"L": L, "R": R, "T": T, "B": B})
+        #LRTB_counts.append({"L": L, "R": R, "T": T, "B": B})
 
     return np.column_stack((Fx, Fy))
 
+def classify_vector_direction(vector):
+    """
+    Classify a 2D vector into one of four angular regions based on its angle with the positive x-axis.
+
+    :param vector: Tuple (x, y) representing the vector.
+    :return: One of four categories: 1, 2, 3, 4 corresponding to
+             [-45, 45], [45, 135], [135, 225], [225, 315(-45)]
+    """
+    x, y = vector
+
+    # Compute angle in degrees
+    angle = np.degrees(np.arctan2(y, x))  # atan2(y, x) gives angle in [-180, 180]
+    angle = (angle + 360) % 360  # Convert to [0, 360] range
+
+    # Classify based on angle ranges
+    if -45 <= angle < 45 or 315 <= angle < 360:
+        return 0  # Region [-45, 45]
+    elif 45 <= angle < 135:
+        return 1  # Region [45, 135]
+    elif 135 <= angle < 225:
+        return 2  # Region [135, 225]
+    elif 225 <= angle < 315:
+        return 3  # Region [225, 315]
 
 def compute_curl(landmarks, vector_field):
     """
@@ -118,7 +147,7 @@ def visualize_curl_on_image(image_path, landmarks):
     plt.show()
 
 
-def rotate_landmarks_90_ccw(landmarks, image_width, image_height):
+def rotate_landmarks_90_ccw(landmarks, image_width):
     """
     Rotates landmark coordinates 90 degrees counterclockwise.
 
@@ -140,10 +169,43 @@ def rotate_landmarks_90_ccw(landmarks, image_width, image_height):
     # Stack the new coordinates
     rotated_landmarks = np.column_stack((x_new, y_new))
     return rotated_landmarks
-# Example usage (replace with your image path and landmarks)
-image_path = "cat_5_rotated90_224.jpg"
 
-with open('auto_proposed_landmarks.csv', 'r') as f:
+def rotate_landmarks(image_shape, landmarks, angle):
+    """
+    Rotate landmark coordinates by a given angle around the image center.
+
+    :param image_shape: Tuple (height, width) of the image.
+    :param landmarks: List of (x, y) coordinates.
+    :param angle: Rotation angle in degrees (counterclockwise).
+    :return: List of rotated (x, y) coordinates.
+    """
+    width, height  = image_shape[:2]
+    cx, cy = width / 2, height / 2  # Image center
+
+    # Convert angle to radians
+    theta = np.radians(angle)
+
+    # Rotation matrix
+    cos_theta, sin_theta = np.cos(theta), np.sin(theta)
+    rotation_matrix = np.array([[cos_theta, -sin_theta], [sin_theta, cos_theta]])
+
+    rotated_landmarks = []
+    for x, y in landmarks:
+        # Translate point to origin
+        x_translated, y_translated = x - cx, y - cy
+
+        # Apply rotation
+        x_rotated, y_rotated = rotation_matrix @ np.array([x_translated, y_translated])
+
+        # Translate back to image space
+        x_new, y_new = x_rotated + cx, y_rotated + cy
+        rotated_landmarks.append((int(x_new), int(y_new)))  # Round to nearest pixel
+
+    return rotated_landmarks
+# Example usage (replace with your image path and landmarks)
+image_path = "cat_5.jpg"
+
+with open('landmarks_A.csv', 'r') as f:
     landmark_file = csv.reader(f)
     landmarks = []
     for landmark in landmark_file:
@@ -153,6 +215,6 @@ with open('auto_proposed_landmarks.csv', 'r') as f:
 # landmarks = np.rot90(landmarks, 1)
 image_width = 224
 image_height = 224
-rotated_landmarks = rotate_landmarks_90_ccw(np.asarray(landmarks), image_width, image_height)
+rotated_landmarks = rotate_landmarks((image_width,image_height),np.asarray(landmarks), 0)
 
 visualize_curl_on_image(image_path, np.asarray(rotated_landmarks))

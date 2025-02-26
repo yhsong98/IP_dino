@@ -9,9 +9,9 @@ import matplotlib
 import time
 import cv2
 from PIL import Image
-from scipy.spatial.distance import directed_hausdorff
-import heapq
+from scipy.spatial import procrustes
 import random
+from termcolor import colored
 matplotlib.use('Qt5Agg')
 
 def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -30,9 +30,9 @@ def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return torch.stack(result_list, dim=2)  # Bx1x(t_x)x(t_y)
 
 
-def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, landmark_file, num_ref_points: int, load_size: int = 224, layer: int = 11,
+def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mask_file, num_ref_points: int, load_size: int = 224, layer: int = 11,
                                 facet: str = 'key', bin: bool = False, stride: int = 14, model_type: str = 'dinov2_vits14',
-                                num_sim_patches: int = 1, sim_threshold: float = 0.95):
+                                num_sim_patches: int = 1, sim_threshold: float = 0.95, num_rotations: int = 4):
     """
      finding similarity between a descriptor in one image to the all descriptors in the other image.
      :param image_path_a: path to first image.
@@ -53,29 +53,43 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, lan
 ]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
-    patch_size = extractor.model.patch_embed.patch_size[0]
+    patch_size = extractor.model.patch_embed.patch_size[0] if isinstance(extractor.model.patch_embed.patch_size,tuple) else extractor.model.patch_embed.patch_size
     image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
     num_patches_a, load_size_a = extractor.num_patches, extractor.load_size
 
-
-    mask = cv2.resize(cv2.imread(landmark_file, cv2.IMREAD_GRAYSCALE),(load_size_a[1],load_size_a[0]))
-    coords = cv2.findNonZero(mask)
-    if coords is not None:
+    if mask_file:
+        mask = cv2.resize(cv2.imread(mask_file, cv2.IMREAD_GRAYSCALE),(load_size_a[1],load_size_a[0]))
+        coords = cv2.findNonZero(mask)
+        if coords is not None:
+            coords_list = coords.reshape(-1, 2).tolist()
+            landmarks = random.sample(coords_list, num_ref_points)
+        else:
+            landmarks = []
+    else:
+        coords = cv2.findNonZero(np.ones((load_size_a[0],load_size_a[1])))
         coords_list = coords.reshape(-1, 2).tolist()
         landmarks = random.sample(coords_list, num_ref_points)
-    else:
-        landmarks = []
 
 
-    fig, axes = plt.subplots(2, 2, figsize=(15, 15))
+    fig, axes = plt.subplots(2, 2, figsize=(30, 30))
+
+    # axes[1][1].title.set_text('Placeholder')
+    # axes[1][1].set_axis_off()
+    # axes[1][1].imshow(Image.open('../data/images/placeholder.jpg'))
 
     all_files = os.listdir(image_folder_path_b)
     images = [file for file in all_files if file.endswith(('.jpg', '.png', '.jpeg'))]
-    for image_path in sorted(images)[::-1]:
+    images.sort()
+    #random.shuffle(images)
+    count_all=0
+    count_correct=0
+    count_mistake=0
+    failure_case=[]
+    for image_path in images:
         start=time.time()
         image_path_b = os.path.join(image_folder_path_b, image_path)
-        batch_b_rotations = extractor.preprocess(image_path_b, load_size, rotate=True)
+        batch_b_rotations = extractor.preprocess(image_path_b, load_size, rotate=num_rotations)
 
         descs_b_s = []
         num_patches_b_rotations, load_size_b_rotations = [], []
@@ -95,17 +109,20 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, lan
         axes[0][1].title.set_text('B (original orientation)')
         axes[0][1].set_axis_off()
         axes[0][1].imshow(batch_b_rotations[0][1])
+
+        axes[1][1].clear()
+        axes[1][1].set_axis_off()
+        axes[1][1].title.set_text('Marked Points on Original')
+        axes[1][1].imshow(batch_b_rotations[0][1])
+
+
         ptses = np.asarray(landmarks)
-
-
         a_landmark_points_rotations = []
         b_landmark_points_rotations = []
         landmarks_ids_rotation = []
         multi_curr_similarities_rotations = []
 
         #test for remote control
-
-
         for id, descs_b_rot in enumerate(descs_b_s):
             a_landmark_points = []
             b_landmark_points = []
@@ -147,24 +164,78 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, lan
             b_landmark_points_rotations.append(b_landmark_points)
             landmarks_ids_rotation.append(landmark_ids)
 
+
         scores_num = []
+        scores_ds =[]
         for a_landmark_points, b_landmark_points in zip(a_landmark_points_rotations,b_landmark_points_rotations):
             num_landmark_points = len(b_landmark_points)
-            # directional_sim = compare_directions(a_landmark_points, b_landmark_points)
-            # directional_sim = directional_sim if not np.isnan(directional_sim) else 0
-            print("[", num_landmark_points,"]",end="")
+            try:
+                directional_sim = procrustes_analysis(a_landmark_points, b_landmark_points)
+            except ValueError:
+                directional_sim = 1.2
+            #directional_sim = directional_sim if not np.isnan(directional_sim) else 0
+            print("[", num_landmark_points,",",directional_sim,"] ",end="")
             scores_num.append(len(b_landmark_points))
-
-        try:
-            fittest_index = scores_num.index(max(scores_num))
-        except ValueError:
-            fittest_index = 0
-
+            scores_ds.append(directional_sim)
         print()
-        rotations={0:'origin',1:'90°',2:'180°',3:'270°'}
+        fittest_index = scores_num.index(max(scores_num))
+
+        #Adjust result by shape similarity?
+        # curr_max = np.max(scores_num)
+        # candidates = {}
+        # for id, (num, ds) in enumerate(zip(scores_num, scores_ds)):
+        #     if curr_max < num*1.1:
+        #         candidates[id]=ds
+        # try:
+        #     fittest_index = min(candidates, key=candidates.get)
+        # except ValueError:
+        #     fittest_index = 0
+
+        # if fittest_index != scores_num.index(curr_max):
+        #
+        #     print("Adjusted by Shapesim!")
+        #end
+
+
+
+        rotation_degrees = [angle for angle in np.linspace(0, 360, num_rotations, endpoint=False)]
+        rotations = {}
+        for i,rotation_degree in enumerate(rotation_degrees):
+            rotations[i]=rotation_degree
+
         print('rotation_degree:',rotations[fittest_index])
         print(image_path)
 
+        # Testing skull images
+        name = image_path.replace('image_', '')
+        name = name.replace('.png', '')
+        name = int(name)
+        if 1 <= name <= 35:
+            gt = 3
+        elif 36 <= name <= 96:
+            gt = 2
+        elif 97 <= name <= 145:
+            gt = 1
+        else:
+            gt = 0
+        # end
+
+        print('Ground_truth:',rotations[gt])
+
+        if gt==fittest_index:
+            # if fittest_index != scores_num.index(curr_max):
+            #     count_correct+=1
+            #     print(colored('Corrected by Shapesim!', 'yellow'))
+            count_all+=1
+            print(colored('Correct', 'green'))
+        else:
+            # if scores_num.index(curr_max) == gt:
+            #     count_mistake+=1
+            #     print(colored('Mistaken by Shapesim!', 'yellow'))
+            #     failure_case.append(image_path+': Mistaken by Shapesim')
+            # else:
+            failure_case.append(image_path+': Inherent Failure')
+            print(colored('Incorrect', 'red'))
 
         #descs_b = descs_b_s[fittest_index]
         image_pil_b = batch_b_rotations[fittest_index][1]
@@ -196,50 +267,63 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, lan
 
         print('num_landmark_points:',len(real_landmark_points))
         print('num_confident_points:',len(a_landmark_points))
+
+
+
+        output_reference = []
+        rotated_coords = []
+        count = 0
         for id, pt in enumerate(zip(a_landmark_points,b_landmark_points)):
             if landmark_ids[id] in real_landmark_points:
 
-                patch_a= plt.Circle(pt[0], radius, color=color_map[id%len(color_map)])
+                patch_a= plt.Circle(pt[0], radius, color=color_map[count%len(color_map)])
                 axes[0][0].add_patch(patch_a)
-                label = axes[0][0].annotate(str(id), xy=pt[0], fontsize=6, ha="center")
+                output_reference.append(pt[0])
+                label = axes[0][0].annotate(str(count), xy=pt[0], fontsize=6, ha="center")
 
-                patch_b = plt.Circle(pt[1], radius, color=color_map[id%len(color_map)])
+                patch_b = plt.Circle(pt[1], radius, color=color_map[count%len(color_map)])
                 axes[1][0].add_patch(patch_b)
-                label = axes[1][0].annotate(str(id), xy=pt[1], fontsize=6, ha="center")
+                rotated_coords.append(pt[1])
+                label = axes[1][0].annotate(str(count), xy=pt[1], fontsize=6, ha="center")
 
-        axes[1][1].clear()
-        axes[1][1].title.set_text('Placeholder')
-        axes[1][1].set_axis_off()
-        axes[1][1].imshow(np.asarray(Image.open('../data/images/placeholder.jpg')))
-        # if len(b_landmark_points) > 2:
-        #     b_landmark_points = np.asarray(b_landmark_points)
-        #     axes[1][1].clear()
-        #     try:
-        #         axes[1][1].imshow(robust_fit_and_draw_line(np.asarray(image_pil_b), b_landmark_points))
-        #     except:
-        #         axes[1][1].imshow(image_pil_b)
-        # else:
-        #     axes[1][1].imshow(image_pil_b)
+                count+=1
 
+        output_target = []
+        landmarks_on_original = rotate_landmarks(image_pil_b.size,rotated_coords,rotations[fittest_index])
+        for id,pt in enumerate(landmarks_on_original):
+            patch_d =plt.Circle(pt,radius,color=color_map[id%len(color_map)])
+            axes[1][1].add_patch(patch_d)
+            output_target.append(pt)
+
+            label = axes[1][1].annotate(str(id), xy=pt, fontsize=6, ha="center")
+
+        # np.savetxt('landmarks_A.csv',output_reference,delimiter=',')
+        # np.savetxt('landmarks_B.csv',output_target,delimiter=',')
         plt.draw()
-        print("-----------")
-        print(image_path_b)
+
         print('time:', time.time() - start)
+        print("-----------")
         ptses = plt.ginput(num_ref_points, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None)
-
-
-def max_two_values_and_indexes_heapq(arr):
+    print("Accuracy:",count_all/len(images))
+    print("Correct:",count_correct)
+    print("Mistake:",count_mistake)
+    np.savetxt('failure_cases.txt',failure_case,delimiter=',',fmt='%s')
+def procrustes_analysis(points_A, points_B):
     """
-    Find the two maximum values and their indexes using heapq.
-    :param arr: List of numbers.
-    :return: Two maximum values and their indexes.
-    """
-    if len(arr) < 2:
-        raise ValueError("The list must contain at least two elements.")
+    Perform Procrustes analysis to measure shape similarity.
 
-    # Use heapq.nlargest to get the largest two elements along with their indices
-    largest = heapq.nlargest(2, enumerate(arr), key=lambda x: x[1])  # (Index, Value)
-    return (largest[0][1], largest[0][0]), (largest[1][1], largest[1][0])
+    :param points_A: Array of (x, y) coordinates for reference shape.
+    :param points_B: Array of (x, y) coordinates for detected shape.
+    :return: Procrustes distance (lower means more similar).
+    """
+    # Ensure points are NumPy arrays
+    points_A = np.array(points_A)
+    points_B = np.array(points_B)
+
+    # Perform Procrustes alignment
+    mtx1, mtx2, disparity = procrustes(points_A, points_B)
+    return disparity
+
 
 """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
 def str2bool(v):
@@ -251,123 +335,6 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
-
-
-def fit_and_draw_line(image, points, line_color=(0, 255, 0), line_thickness=2, point_color=(0, 0, 255), point_size=5):
-    """
-    Fit a line that minimizes the perpendicular distance to the given points and draw it on the image.
-
-    :param image: Input image (H x W x C).
-    :param points: Array of 2D points (N x 2).
-    :param line_color: Color of the line (default: green).
-    :param line_thickness: Thickness of the line (default: 2).
-    :param point_color: Color of the points (default: red).
-    :param point_size: Size of the points (default: 5).
-    :return: Image with the best-fit orthogonal regression line and points drawn.
-    """
-    # Compute the centroid of the points
-    image = np.asarray(image)
-    centroid = np.mean(points, axis=0)
-
-    # Center the points by subtracting the centroid
-    centered_points = points - centroid
-
-    # Perform Singular Value Decomposition (SVD) to find the direction of the best-fit line
-    _, _, vh = np.linalg.svd(centered_points)
-    direction_vector = vh[0]  # The direction vector of the line (first right singular vector)
-
-    # Define the line equation in terms of the direction vector and centroid
-    # Line: x = centroid + t * direction_vector
-    t = np.linspace(-500, 500, 1000)  # Generate points along the line
-    line_points = centroid + t[:, None] * direction_vector
-
-    # Draw the line on the image
-    output_image = image.copy()
-    x1, y1 = line_points[0].astype(int)
-    x2, y2 = line_points[-1].astype(int)
-    cv2.line(output_image, (x1, y1), (x2, y2), line_color, line_thickness)
-
-    # Draw the original points
-    for px, py in points:
-        cv2.circle(output_image, (int(px), int(py)), point_size, point_color, -1)
-
-    output_image = Image.fromarray(output_image)
-    return output_image
-
-def robust_fit_and_draw_line(image, points, threshold=15, line_color=(0, 255, 0), line_thickness=2, point_color=(0, 0, 255), point_size=5):
-    """
-    Fit a robust line using SVD while ignoring outliers, and draw it on the image.
-
-    :param image: Input image (H x W x C).
-    :param points: Array of (x, y) coordinates.
-    :param threshold: Distance threshold to filter outliers.
-    :param line_color: Color of the line (default: green).
-    :param line_thickness: Thickness of the line (default: 2).
-    :param point_color: Color of the points (default: red).
-    :param point_size: Size of the points (default: 5).
-    :return: Image with the robust best-fit line and points drawn.
-    """
-    # Iteratively remove outliers and fit the line
-    points = np.array(points)
-    max_iterations = 5
-    inlier_mask = np.ones(len(points), dtype=bool)
-
-    for _ in range(max_iterations):
-        # Use only inlier points
-        inlier_points = points[inlier_mask]
-
-        # Compute the centroid and center the points
-        centroid = np.mean(inlier_points, axis=0)
-        centered_points = inlier_points - centroid
-
-        # Perform SVD
-        _, _, vh = np.linalg.svd(centered_points)
-        direction_vector = vh[0]  # Direction of the best-fit line
-
-        # Calculate distances of all points to the line
-        line_normal = np.array([-direction_vector[1], direction_vector[0]])  # Perpendicular to the line
-        distances = np.abs(np.dot(points - centroid, line_normal))
-
-        # Update inliers
-        inlier_mask = distances < threshold
-
-    # Final line calculation using inliers
-    inlier_points = points[inlier_mask]
-    centroid = np.mean(inlier_points, axis=0)
-    centered_points = inlier_points - centroid
-    _, _, vh = np.linalg.svd(centered_points)
-    direction_vector = vh[0]
-
-    # Define the line equation in terms of the direction vector and centroid
-    t = np.linspace(-500, 500, 1000)
-    line_points = centroid + t[:, None] * direction_vector
-
-    # Draw the line on the image
-    output_image = image.copy()
-    x1, y1 = line_points[0].astype(int)
-    x2, y2 = line_points[-1].astype(int)
-    cv2.line(output_image, (x1, y1), (x2, y2), line_color, line_thickness)
-
-    # Draw all points (inliers in green, outliers in red)
-    for i, (px, py) in enumerate(points):
-        color = (0, 255, 0) if inlier_mask[i] else (255, 0, 0)
-        cv2.circle(output_image, (int(px), int(py)), point_size, color, -1)
-
-    return output_image
-
-def compute_hausdorff_distance(sequence1, sequence2):
-    """
-    Compute the Hausdorff distance between two sequences of points.
-
-    :param sequence1: Array of (x, y) coordinates for sequence 1.
-    :param sequence2: Array of (x, y) coordinates for sequence 2.
-    :return: Hausdorff distance (lower means more similar).
-    """
-    sequence1 = np.array(sequence1)
-    sequence2 = np.array(sequence2)
-    forward_distance = directed_hausdorff(sequence1, sequence2)[0]
-    backward_distance = directed_hausdorff(sequence2, sequence1)[0]
-    return max(forward_distance, backward_distance)
 
 def draw_grid(image,save_path):
     """
@@ -402,32 +369,40 @@ def draw_grid(image,save_path):
     cv2.imwrite(save_path, grid_image)
 
 
-def calculate_overall_direction(sequence):
+def rotate_landmarks(image_shape, landmarks, angle):
     """
-    Calculate the overall direction of a sequence of points.
+    Rotate landmark coordinates by a given angle around the image center.
 
-    :param sequence: List of (x, y) coordinates.
-    :return: Normalized mean direction vector (overall direction).
+    :param image_shape: Tuple (height, width) of the image.
+    :param landmarks: List of (x, y) coordinates.
+    :param angle: Rotation angle in degrees (counterclockwise).
+    :return: List of rotated (x, y) coordinates.
     """
-    sequence = np.array(sequence)
-    displacements = sequence[1:] - sequence[:-1]  # Pairwise displacements
-    mean_direction = np.mean(displacements, axis=0)  # Mean displacement vector
-    normalized_direction = mean_direction / np.linalg.norm(mean_direction)  # Normalize to unit vector
-    return normalized_direction
+    width, height  = image_shape[:2]
+    cx, cy = width / 2, height / 2  # Image center
+
+    # Convert angle to radians
+    theta = np.radians(angle)
+
+    # Rotation matrix
+    cos_theta, sin_theta = np.cos(theta), np.sin(theta)
+    rotation_matrix = np.array([[cos_theta, -sin_theta], [sin_theta, cos_theta]])
+
+    rotated_landmarks = []
+    for x, y in landmarks:
+        # Translate point to origin
+        x_translated, y_translated = x - cx, y - cy
+
+        # Apply rotation
+        x_rotated, y_rotated = rotation_matrix @ np.array([x_translated, y_translated])
+
+        # Translate back to image space
+        x_new, y_new = x_rotated + cx, y_rotated + cy
+        rotated_landmarks.append((int(x_new), int(y_new)))  # Round to nearest pixel
+
+    return rotated_landmarks
 
 
-def compare_directions(seq_a, seq_b):
-    """
-    Compare the overall directions of two sequences using cosine similarity.
-
-    :param seq_a: List of (x, y) coordinates for sequence A.
-    :param seq_b: List of (x, y) coordinates for sequence B.
-    :return: Cosine similarity between the overall directions of the sequences.
-    """
-    dir_a = calculate_overall_direction(seq_a)
-    dir_b = calculate_overall_direction(seq_b)
-    cosine_similarity = np.dot(dir_a, dir_b)
-    return cosine_similarity
 
 def classify_landmark(candidate_points, eps=20, min_samples=2):
     """
@@ -470,10 +445,15 @@ def classify_landmark(candidate_points, eps=20, min_samples=2):
 
     return {"label": label, "num_clusters": num_clusters}
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/cat_5.jpg", help='Path to the first image')
-    parser.add_argument('--image_b_folder', type=str, default="../data/images/dog_rotated/", help='Path to the second image.')
+    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/skull.png",
+                        help='Path to the first image')
+    parser.add_argument('--mask_file', default='../data/images/landmark_files/skull_mask.png', type=str,
+                        help="landmarks file.")
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/skull/",
+                        help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")
@@ -486,13 +466,17 @@ if __name__ == "__main__":
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
     parser.add_argument('--num_sim_patches', default=20, type=int, help="number of closest patches to show.")
-    parser.add_argument('--num_ref_points', default=100, type=int, help="number of reference points to show.")
-    parser.add_argument('--landmark_file', default='../data/images/landmark_files/cat_5_mask.png', type=str, help="landmarks file.")
-
+    parser.add_argument('--num_ref_points', default=300, type=int, help="number of reference points to show.")
+    parser.add_argument('--sim_threshold', default=0.95, type=float, help="similarity threshold.")
+    parser.add_argument('--num_rotation', default=4, type=int, help="number of test rotations, 4 or 8")
+    parser.add_argument('--landmark_save', default='output_landmarks.csv', type=str,
+                        help="CSV file to save landmark points.")
     args = parser.parse_args()
 
     with torch.no_grad():
+        landmarks = show_similarity_interactive(args.image_a, args.image_b_folder, args.mask_file, args.num_ref_points,
+                                                args.load_size,
+                                                args.layer, args.facet, args.bin,
+                                                args.stride, args.model_type, args.num_sim_patches,
+                                                args.sim_threshold, args.num_rotation)
 
-        show_similarity_interactive(args.image_a, args.image_b_folder, args.landmark_file, args.num_ref_points, args.load_size, args.layer,
-                                    args.facet, args.bin,
-                                    args.stride, args.model_type, args.num_sim_patches)
