@@ -51,7 +51,7 @@ def show_similarity_interactive(image_path_a: str, image_path_b: str, load_size:
     num_patches_b, load_size_b = extractor.num_patches, extractor.load_size
 
     # plot
-    fig, axes = plt.subplots(2, 2, figsize=(15,15))
+    fig, axes = plt.subplots(2, 2, figsize=(30,30))
 
     #woops, it seems [1][0] and [1][1] are exchanged. But for the least effort, let's just remain as it is.
     axes[0][0].title.set_text('Obj A and Query')
@@ -222,8 +222,8 @@ def classify_landmark(candidate_points, eps=20, min_samples=1):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="../data/images/horse/horse_1.png", help='Path to the first image')
-    parser.add_argument('--image_b', type=str, default="../data/images/horse/horse_2.png", help='Path to the second image.')
+    parser.add_argument('--image_a', type=str, default="../data/images/human_face/face1.png", help='Path to the first image')
+    parser.add_argument('--image_b', type=str, default="../data/images/human_face/2_person.png", help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")

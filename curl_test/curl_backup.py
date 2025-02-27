@@ -2,9 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 import csv
-import random
 
-def compute_vector_field(height, width, landmarks):
+
+def compute_vector_field(image, landmarks):
     """
     Computes the vector field for each landmark considering diagonal quadrants.
 
@@ -17,21 +17,43 @@ def compute_vector_field(height, width, landmarks):
         vector_field (np.ndarray): Nx2 array of vector field (Fx, Fy).
         LRTB_counts (list): List of dictionaries storing L, R, T, B counts for each point.
     """
-    vector_field = np.zeros((height, width, 2))
-    vector_field = vector_field.reshape(-1,2)
+    vector_field = np.zeros((image.shape[0], image.shape[1], 2))
+    num_points = len(landmarks)
+    Fx = np.zeros(num_points)
+    Fy = np.zeros(num_points)
+    # LRTB_counts = []  # Store counts for visualization
 
-    for index,_ in enumerate(vector_field):
-        xi, yi = index%width, index//width
-        count = [0, 0, 0, 0] #R,T,L,B
+    vector_field = vector_field.reshape(-1, 2)
 
-        for (x_i, y_i) in landmarks:
-            id = classify_vector_direction(np.subtract([xi,yi],[x_i,y_i]))
-            count[id]+=1
+    for index, entry in enumerate(vector_field):
+        xi, yi = index % image.shape[1], index // image.shape[1]
 
-        vector_field[index]=np.array([count[2]-count[0],count[1]-count[3]])
+        for i, (x_i, y_i) in enumerate(landmarks):
+            # Get all neighboring points within the radius
 
-    vector_field = vector_field.reshape(height,width,2)
-    return vector_field
+            # Exclude the current point
+            neighbors = neighbors[(neighbors[:, 0] != x_i) | (neighbors[:, 1] != y_i)]
+
+            # Count points in diagonal quadrants
+            # L = np.sum((neighbors[:, 0] < x_i) & (neighbors[:, 1] > y_i))  # Top-left (↖)
+            # R = np.sum((neighbors[:, 0] > x_i) & (neighbors[:, 1] < y_i))  # Bottom-right (↘)
+            # T = np.sum((neighbors[:, 0] > x_i) & (neighbors[:, 1] > y_i))  # Top-right (↗)
+            # B = np.sum((neighbors[:, 0] < x_i) & (neighbors[:, 1] < y_i))  # Bottom-left (↙)
+
+            count = [0, 0, 0, 0]
+            for neighbor in neighbors:
+                id = classify_vector_direction(neighbor - [x_i, y_i])
+                count[id] += 1
+
+            # Compute vector components
+            Fx[i] = count[2] - count[0]
+            Fy[i] = count[1] - count[3]
+
+            # Store counts for visualization
+            # LRTB_counts.append({"L": L, "R": R, "T": T, "B": B})
+
+    return np.column_stack((Fx, Fy))
+
 
 def classify_vector_direction(vector):
     """
@@ -57,25 +79,25 @@ def classify_vector_direction(vector):
     elif 225 <= angle < 315:
         return 3  # Region [225, 315]
 
-def compute_curl(vector_field, dx=10.0, dy=10.0):
-    """
-    Compute the curl of a 2D vector field (P, Q).
 
-    :param P: 2D NumPy array representing the x-component of the vector field.
-    :param Q: 2D NumPy array representing the y-component of the vector field.
-    :param dx: Spacing in the x-direction (default: 1.0).
-    :param dy: Spacing in the y-direction (default: 1.0).
-    :return: 2D NumPy array representing the curl of the vector field.
+def compute_curl(landmarks, vector_field):
     """
-    Fx, Fy = vector_field[:,:, 0], vector_field[:,:, 1]
-    dFydx = np.gradient(Fy, dx, axis=1)
-    dFxdy = np.gradient(Fx, dy, axis=0)
+    Computes the discrete Curl at each landmark.
 
-    curl_values = dFydx - dFxdy
-    # for i, (x_i, y_i) in enumerate(landmarks):
-    #     magnitude = np.sqrt(x_i ** 2 + y_i ** 2) * np.sqrt(Fx[i] ** 2 + Fy[i] ** 2)
-    #     theta = np.arctan2(Fy[i], Fx[i])  # Angle in radians
-    #     curl_values[i] = 2 * np.pi * np.cos(theta) * magnitude
+    Parameters:
+        landmarks (np.ndarray): Nx2 array of (x, y) coordinates.
+        vector_field (np.ndarray): Nx2 array of (Fx, Fy).
+
+    Returns:
+        curl_values (np.ndarray): Nx1 array of Curl values.
+    """
+    Fx, Fy = vector_field[:, 0], vector_field[:, 1]
+    curl_values = np.zeros(len(landmarks))
+
+    for i, (x_i, y_i) in enumerate(landmarks):
+        magnitude = np.sqrt(x_i ** 2 + y_i ** 2) * np.sqrt(Fx[i] ** 2 + Fy[i] ** 2)
+        theta = np.arctan2(Fy[i], Fx[i])  # Angle in radians
+        curl_values[i] = 2 * np.pi * np.cos(theta) * magnitude
 
     return curl_values
 
@@ -93,33 +115,31 @@ def visualize_curl_on_image(image_path, landmarks):
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     # Compute vector field and Curl
-    vector_field = compute_vector_field(image.shape[1], image.shape[0],landmarks)
-    curl_values = compute_curl(vector_field)
+    vector_field = compute_vector_field_diagonal(landmarks)
+    curl_values = compute_curl(landmarks, vector_field)
 
     # Normalize Curl values for visualization
     curl_min, curl_max = np.min(curl_values), np.max(curl_values)
     normalized_curl = (curl_values - curl_min) / (curl_max - curl_min)  # Normalize to [0,1]
-    normalized_curl = normalized_curl*2
-    normalized_curl = normalized_curl-1
+    normalized_curl = normalized_curl * 2
+    normalized_curl = normalized_curl - 1
 
     # Plot the image
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.imshow(image)
 
-    x_indices, y_indices = random.sample(range(0,224),100), random.sample(range(0,224),100)
-    picked_curl = normalized_curl[x_indices, y_indices]
     # Scatter plot of landmarks with color-coded Curl values
     scatter = ax.scatter(
-        x_indices, y_indices,
-        c=picked_curl, cmap='coolwarm', s=100, edgecolors='black'
+        landmarks[:, 0], landmarks[:, 1],
+        c=normalized_curl, cmap='coolwarm', s=100, edgecolors='black'
     )
 
-    #Quiver plot for the vector field
-    # ax.quiver(
-    #     landmarks[:, 0], landmarks[:, 1],
-    #     vector_field[:, 0], vector_field[:, 1],
-    #     color='gold', scale=40, width=0.005
-    # )
+    # Quiver plot for the vector field
+    ax.quiver(
+        landmarks[:, 0], landmarks[:, 1],
+        vector_field[:, 0], vector_field[:, 1],
+        color='gold', scale=40, width=0.005
+    )
 
     # Add a colorbar
     cbar = plt.colorbar(scatter, ax=ax)
@@ -156,6 +176,7 @@ def rotate_landmarks_90_ccw(landmarks, image_width):
     rotated_landmarks = np.column_stack((x_new, y_new))
     return rotated_landmarks
 
+
 def rotate_landmarks(image_shape, landmarks, angle):
     """
     Rotate landmark coordinates by a given angle around the image center.
@@ -165,7 +186,7 @@ def rotate_landmarks(image_shape, landmarks, angle):
     :param angle: Rotation angle in degrees (counterclockwise).
     :return: List of rotated (x, y) coordinates.
     """
-    width, height  = image_shape[:2]
+    width, height = image_shape[:2]
     cx, cy = width / 2, height / 2  # Image center
 
     # Convert angle to radians
@@ -188,6 +209,8 @@ def rotate_landmarks(image_shape, landmarks, angle):
         rotated_landmarks.append((int(x_new), int(y_new)))  # Round to nearest pixel
 
     return rotated_landmarks
+
+
 # Example usage (replace with your image path and landmarks)
 image_path = "cat_5.jpg"
 
@@ -201,6 +224,6 @@ with open('landmarks_A.csv', 'r') as f:
 # landmarks = np.rot90(landmarks, 1)
 image_width = 224
 image_height = 224
-rotated_landmarks = rotate_landmarks((image_width,image_height),np.asarray(landmarks), 0)
+rotated_landmarks = rotate_landmarks((image_width, image_height), np.asarray(landmarks), 0)
 
 visualize_curl_on_image(image_path, np.asarray(rotated_landmarks))
