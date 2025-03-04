@@ -47,24 +47,78 @@ def classify_by_nearest_landmarks(candidates, landmarks, k=3):
 
     return classifications
 
+#
+# def visualize_results(image, candidates, landmarks, classifications):
+#     """
+#     Visualize the candidate points and their nearest landmarks.
+#
+#     :param candidates: List of (x, y) candidate coordinates.
+#     :param landmarks: List of (x, y) landmark coordinates.
+#     :param classifications: Dictionary {candidate_index: assigned_landmark}.
+#     """
+#     plt.figure(figsize=(8, 6))
+#     image = Image.open(image)
+#     plt.imshow(image)
+#
+#     # Plot landmarks
+#     landmarks = np.array(landmarks)
+#     plt.scatter(landmarks[:, 0], landmarks[:, 1], c='blue', label="Landmarks", s=100, edgecolors='k')
+#
+#     # Plot candidates and draw lines to assigned landmarks
+#     candidates = np.array(candidates)
+#     for i, (x, y) in enumerate(candidates):
+#         assigned_landmark = classifications[i]
+#         lx, ly = landmarks[assigned_landmark]
+#
+#         plt.scatter(x, y, c='red', marker='*', s=200, label="Candidate" if i == 0 else None, edgecolors='k')
+#         plt.plot([x, lx], [y, ly], 'k--', alpha=0.6)  # Line to the assigned landmark
+#
+#     plt.legend()
+#     plt.title("Nearest Landmark Assignment")
+#     # plt.gca().invert_yaxis()  # Match image coordinate system
+#     plt.show()
 
-def visualize_results(image, candidates, landmarks, classifications):
+def weighted_voting_classification(candidates, landmarks, epsilon=1e-5):
     """
-    Visualize the candidate points and their nearest landmarks.
+    Classify candidate points based on weighted voting from nearby landmarks.
+
+    :param candidates: List of (x, y) candidate coordinates.
+    :param landmarks: List of (x, y) landmark coordinates.
+    :param epsilon: Small value to prevent division by zero.
+    :return: Dictionary {candidate_index: assigned_landmark_index}.
+    """
+    candidates = np.array(candidates)
+    landmarks = np.array(landmarks)
+
+    # Compute pairwise distances between candidates and landmarks
+    distances = cdist(candidates, landmarks, metric='euclidean')
+
+    # Compute weights (inverse of distance)
+    weights = 1 / (distances + epsilon)
+
+    # Normalize weights so they sum to 1 for each candidate
+    weights /= weights.sum(axis=1, keepdims=True)
+
+    # Assign candidates based on maximum weighted influence
+    assigned_landmarks = np.argmax(weights, axis=1)
+
+    return {i: assigned_landmarks[i] for i in range(len(candidates))}
+
+def visualize_results(candidates, landmarks, classifications):
+    """
+    Visualize the candidate points and their assigned landmarks.
 
     :param candidates: List of (x, y) candidate coordinates.
     :param landmarks: List of (x, y) landmark coordinates.
     :param classifications: Dictionary {candidate_index: assigned_landmark}.
     """
     plt.figure(figsize=(8, 6))
-    image = Image.open(image)
-    plt.imshow(image)
 
     # Plot landmarks
     landmarks = np.array(landmarks)
     plt.scatter(landmarks[:, 0], landmarks[:, 1], c='blue', label="Landmarks", s=100, edgecolors='k')
 
-    # Plot candidates and draw lines to assigned landmarks
+    # Plot candidates and draw weighted connections
     candidates = np.array(candidates)
     for i, (x, y) in enumerate(candidates):
         assigned_landmark = classifications[i]
@@ -74,17 +128,16 @@ def visualize_results(image, candidates, landmarks, classifications):
         plt.plot([x, lx], [y, ly], 'k--', alpha=0.6)  # Line to the assigned landmark
 
     plt.legend()
-    plt.title("Nearest Landmark Assignment")
-    # plt.gca().invert_yaxis()  # Match image coordinate system
+    plt.title("Weighted Voting Assignment of Similar Points")
+    plt.gca().invert_yaxis()  # Match image coordinate system
     plt.show()
-
 
 # Example Usage
 if __name__ == "__main__":
     # Example landmark points (not predefined groups)
-    image_path = "cat_5.jpg"
+    #image_path = "wild_001702.jpg"
 
-    with open('landmarks_A.csv', 'r') as f:
+    with open('landmarks_B.csv', 'r') as f:
         landmark_file = csv.reader(f)
         landmarks = []
         for landmark in landmark_file:
@@ -97,10 +150,10 @@ if __name__ == "__main__":
     ]
 
     # Classify candidates by nearest landmarks
-    classifications = classify_by_nearest_landmarks(candidates, landmarks, k=3)
+    classifications = weighted_voting_classification(candidates, landmarks)
 
     # Visualize results
-    image = 'cat_5.jpg'
+    image = 'wild_001702.jpg'
     visualize_results(image, candidates, landmarks, classifications)
 
     # Print classification results

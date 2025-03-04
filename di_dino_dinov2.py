@@ -8,10 +8,9 @@ import matplotlib.pyplot as plt
 import matplotlib
 import time
 import cv2
-from PIL import Image
-from scipy.spatial import procrustes
+from scipy.spatial.distance import cdist
+from scipy.interpolate import RBFInterpolator
 import random
-from termcolor import colored
 matplotlib.use('Qt5Agg')
 
 def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
@@ -32,7 +31,8 @@ def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 
 def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mask_file, num_ref_points: int, load_size: int = 224, layer: int = 11,
                                 facet: str = 'key', bin: bool = False, stride: int = 14, model_type: str = 'dinov2_vits14',
-                                num_sim_patches: int = 1, sim_threshold: float = 0.95, num_rotations: int = 4):
+                                num_sim_patches: int = 1, sim_threshold: float = 0.95, num_candidates: int = 10,
+                                num_rotations: int = 4, output_csv: bool = False, alpha=0.3):
     """
      finding similarity between a descriptor in one image to the all descriptors in the other image.
      :param image_path_a: path to first image.
@@ -47,7 +47,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
     """
     # extract descriptors
     color_map = [
-    "blue", "green", "red", "cyan", "magenta", "yellow", "black", "orange", "purple", "brown",
+    "blue", "green",  "cyan", "magenta", "yellow", "black", "orange", "purple", "brown",
     "pink", "gray", "olive", "teal", "navy", "maroon", "lime", "gold", "indigo", "turquoise",
     "violet", "aqua", "coral", "orchid", "salmon", "khaki", "plum", "darkgreen", "darkblue", "crimson"
 ]
@@ -95,7 +95,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
             num_patches_b_rotations.append(extractor.num_patches)
             load_size_b_rotations.append(extractor.load_size)
 
-        radius = patch_size // 2
+
         # plot image_a and the chosen patch. if nothing marked chosen patch is cls patch.
         axes[0][0].clear()
         axes[0][0].title.set_text('A (reference)')
@@ -117,6 +117,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
         a_landmark_points_rotations = []
         b_landmark_points_rotations = []
         landmarks_ids_rotation = []
+        similarities_rotations = []
         multi_curr_similarities_rotations = []
 
         #test for remote control
@@ -125,6 +126,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
             b_landmark_points = []
             landmark_ids = []
             similarities = chunk_cosine_sim(descs_a, descs_b_rot)
+            similarities_rotations.append(similarities)
             multi_curr_similarities = []
             for idx, pts in enumerate(ptses):
                 y_coor, x_coor = int(pts[1]), int(pts[0])
@@ -264,58 +266,121 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
         print('num_confident_points:',len(a_landmark_points))
 
         output_reference = []
-        rotated_coords = []
+        output_rotated_coords = []
+        radius_A = patch_size // 4
+        radius_B = radius_A*image_pil_b.size[0]/image_pil_a.size[0]
 
         count=0
         for id, pt in enumerate(zip(a_landmark_points,b_landmark_points)):
             if landmark_ids[id] in real_landmark_points:
 
-                patch_a= plt.Circle(pt[0], radius, color=color_map[count%len(color_map)])
+                patch_a= plt.Circle(pt[0], radius_A, color=color_map[count%len(color_map)],alpha=alpha)
                 axes[0][0].add_patch(patch_a)
                 output_reference.append(pt[0])
                 label = axes[0][0].annotate(str(count), xy=pt[0], fontsize=6, ha="center")
 
-                patch_b = plt.Circle(pt[1], radius, color=color_map[count%len(color_map)])
+                patch_b = plt.Circle(pt[1], radius_B, color=color_map[count%len(color_map)],alpha=alpha)
                 axes[1][0].add_patch(patch_b)
-                rotated_coords.append(pt[1])
+                output_rotated_coords.append(pt[1])
                 label = axes[1][0].annotate(str(count), xy=pt[1], fontsize=6, ha="center")
                 count += 1
 
         output_target = []
-        landmarks_on_original = rotate_landmarks(image_pil_b.size,rotated_coords,rotations[fittest_index])
+        landmarks_on_original = rotate_landmarks(image_pil_b.size,output_rotated_coords,rotations[fittest_index])
         for id,pt in enumerate(landmarks_on_original):
-            patch_d =plt.Circle(pt,radius,color=color_map[id%len(color_map)])
+            patch_d =plt.Circle(pt,radius_B,color=color_map[id%len(color_map)], alpha=alpha)
             axes[1][1].add_patch(patch_d)
             output_target.append(pt)
             label = axes[1][1].annotate(str(id), xy=pt, fontsize=6, ha="center")
 
 
-
-        # np.savetxt('landmarks_A.csv',output_reference,delimiter=',')
-        # np.savetxt('landmarks_B.csv',output_target,delimiter=',')
+        if output_csv:
+            np.savetxt('landmarks_A.csv',output_reference,delimiter=',')
+            np.savetxt('landmarks_B.csv',output_target,delimiter=',')
+            #np.savetxt('rotated_coords.csv',rotated_coords,delimiter=',')
         plt.draw()
 
         print('time:', time.time() - start)
         print("-----------")
 
+        #Interactive Part
+        pts = np.asarray(plt.ginput(1, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None))
+        visible_patches = []
+        num_patches_b = num_patches_b_rotations[fittest_index]
+        while len(pts) == 1:
+            print('Picked point at:', pts)
 
-        ptses = plt.ginput(num_ref_points, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None)
+            y_coor, x_coor = int(pts[0,1]), int(pts[0,0])
+            new_H = patch_size / stride * (load_size_a[0] // patch_size - 1) + 1
+            new_W = patch_size / stride * (load_size_a[1] // patch_size - 1) + 1
+            y_descs_coor = int(new_H / load_size_a[0] * y_coor)
+            x_descs_coor = int(new_W / load_size_a[1] * x_coor)
 
-def procrustes_analysis(points_A, points_B):
-    """
-    Perform Procrustes analysis to measure shape similarity.
+            # reset previous marks
+            for patch in visible_patches:
+                patch.remove()
+                visible_patches = []
 
-    :param points_A: Array of (x, y) coordinates for reference shape.
-    :param points_B: Array of (x, y) coordinates for detected shape.
-    :return: Procrustes distance (lower means more similar).
-    """
-    # Ensure points are NumPy arrays
-    points_A = np.array(points_A)
-    points_B = np.array(points_B)
+            # draw chosen point
+            center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
+                      (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
+            patch = plt.Circle(center, radius_A, color=(1, 0, 0, 0.75))
+            axes[0][0].add_patch(patch)
+            visible_patches.append(patch)
 
-    # Perform Procrustes alignment
-    mtx1, mtx2, disparity = procrustes(points_A, points_B)
-    return disparity
+            raveled_desc_idx = num_patches_a[1] * y_descs_coor + x_descs_coor
+            reveled_desc_idx_including_cls = raveled_desc_idx + 1
+
+            curr_similarities = similarities_rotations[0][0, 0, reveled_desc_idx_including_cls, 1:]
+            curr_similarities = curr_similarities.reshape(num_patches_b)
+
+
+            sims, idxs = torch.topk(curr_similarities.flatten(), num_candidates)
+            if sims[0] < 0.95:
+                b_center=None
+
+            else:
+                b_center = []
+                for idx, sim in zip(idxs, sims):
+                    y_descs_coor, x_descs_coor = torch.div(idx, num_patches_b[1], rounding_mode='floor'), idx % num_patches_b[1]
+                    center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
+                              (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
+                    # patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
+                    b_center.append([center[0].cpu().numpy(), center[1].cpu().numpy()])
+
+                    for center in b_center:
+                        patch = plt.Circle(center, radius_B, color='red')
+                        axes[1][0].add_patch(patch)
+                        visible_patches.append(patch)
+
+            best_match_B = resolve_ambiguity_tps(pts[0],b_center,output_reference,output_rotated_coords)
+            print('Sim:',sims[0])
+            if b_center:
+                patch = plt.Circle(best_match_B, radius_B*2, color='green')
+            else:
+                patch = plt.Circle(best_match_B, radius_B * 2, color='grey',)
+            axes[1][0].add_patch(patch)
+            visible_patches.append(patch)
+
+            plt.draw()
+            pts = np.asarray(plt.ginput(1, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None))
+
+
+# def procrustes_analysis(points_A, points_B):
+#     """
+#     Perform Procrustes analysis to measure shape similarity.
+#
+#     :param points_A: Array of (x, y) coordinates for reference shape.
+#     :param points_B: Array of (x, y) coordinates for detected shape.
+#     :return: Procrustes distance (lower means more similar).
+#     """
+#     # Ensure points are NumPy arrays
+#     points_A = np.array(points_A)
+#     points_B = np.array(points_B)
+#
+#     # Perform Procrustes alignment
+#     mtx1, mtx2, disparity = procrustes(points_A, points_B)
+#     return disparity
 
 
 """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
@@ -329,37 +394,37 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def draw_grid(image,save_path):
-    """
-    Draw a grid on the image to separate it into four areas: NW, NE, SW, SE.
-
-    :param image: Input image (H x W x C).
-    :return: Image with grid and labeled areas.
-    """
-    # Get image dimensions
-    image = np.asarray(image)
-    height, width = image.shape[:2]
-
-    # Compute the center of the image
-    center_x, center_y = width // 2, height // 2
-
-    # Draw vertical and horizontal lines
-    grid_image = image.copy()
-    cv2.line(grid_image, (center_x, 0), (center_x, height), (0, 255, 0), 2)  # Vertical line
-    cv2.line(grid_image, (0, center_y), (width, center_y), (0, 255, 0), 2)  # Horizontal line
-
-    # Add labels for areas
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    font_scale = 1
-    thickness = 2
-    color = (255, 0, 0)  # Blue for text
-
-    cv2.putText(grid_image, "NW", (center_x // 2, center_y // 2), font, font_scale, color, thickness)
-    cv2.putText(grid_image, "NE", (3 * center_x // 2, center_y // 2), font, font_scale, color, thickness)
-    cv2.putText(grid_image, "SW", (center_x // 2, 3 * center_y // 2), font, font_scale, color, thickness)
-    cv2.putText(grid_image, "SE", (3 * center_x // 2, 3 * center_y // 2), font, font_scale, color, thickness)
-
-    cv2.imwrite(save_path, grid_image)
+# def draw_grid(image,save_path):
+#     """
+#     Draw a grid on the image to separate it into four areas: NW, NE, SW, SE.
+#
+#     :param image: Input image (H x W x C).
+#     :return: Image with grid and labeled areas.
+#     """
+#     # Get image dimensions
+#     image = np.asarray(image)
+#     height, width = image.shape[:2]
+#
+#     # Compute the center of the image
+#     center_x, center_y = width // 2, height // 2
+#
+#     # Draw vertical and horizontal lines
+#     grid_image = image.copy()
+#     cv2.line(grid_image, (center_x, 0), (center_x, height), (0, 255, 0), 2)  # Vertical line
+#     cv2.line(grid_image, (0, center_y), (width, center_y), (0, 255, 0), 2)  # Horizontal line
+#
+#     # Add labels for areas
+#     font = cv2.FONT_HERSHEY_SIMPLEX
+#     font_scale = 1
+#     thickness = 2
+#     color = (255, 0, 0)  # Blue for text
+#
+#     cv2.putText(grid_image, "NW", (center_x // 2, center_y // 2), font, font_scale, color, thickness)
+#     cv2.putText(grid_image, "NE", (3 * center_x // 2, center_y // 2), font, font_scale, color, thickness)
+#     cv2.putText(grid_image, "SW", (center_x // 2, 3 * center_y // 2), font, font_scale, color, thickness)
+#     cv2.putText(grid_image, "SE", (3 * center_x // 2, 3 * center_y // 2), font, font_scale, color, thickness)
+#
+#     cv2.imwrite(save_path, grid_image)
 
 
 def rotate_landmarks(image_shape, landmarks, angle):
@@ -438,14 +503,64 @@ def classify_landmark(candidate_points, eps=20, min_samples=2):
 
     return {"label": label, "num_clusters": num_clusters}
 
+def estimate_tps_transform(landmarks_A, landmarks_B):
+    """
+    Estimate a Thin Plate Spline (TPS) transformation.
+
+    :param landmarks_A: List of (x, y) landmark coordinates in Image A.
+    :param landmarks_B: List of (x, y) corresponding landmarks in Image B.
+    :return: RBF interpolator for mapping points from A to B.
+    """
+    landmarks_A = np.array(landmarks_A, dtype=np.float32)
+    landmarks_B = np.array(landmarks_B, dtype=np.float32)
+
+    # Train separate interpolators for X and Y coordinates
+    tps_x = RBFInterpolator(landmarks_A, landmarks_B[:, 0], kernel="thin_plate_spline")
+    tps_y = RBFInterpolator(landmarks_A, landmarks_B[:, 1], kernel="thin_plate_spline")
+
+    return tps_x, tps_y
+
+
+def map_point_tps(point_A, tps_x, tps_y):
+    """
+    Map a point using the TPS transformation.
+
+    :param point_A: (x, y) coordinate in Image A.
+    :param tps_x: RBF interpolator for X-coordinates.
+    :param tps_y: RBF interpolator for Y-coordinates.
+    :return: Transformed (x, y) point in Image B.
+    """
+    point_A = np.array(point_A).reshape(1, -1)  # Convert to proper shape
+    return float(tps_x(point_A)), float(tps_y(point_A))
+
+
+def resolve_ambiguity_tps(point_A, candidates_B, landmarks_A, landmarks_B):
+    """
+    Resolve ambiguity using TPS warping and landmark correlation.
+    """
+    # Compute TPS transformation
+    tps_x, tps_y = estimate_tps_transform(landmarks_A, landmarks_B)
+
+    # Predict where the point should be in Image B
+    predicted_point_B = map_point_tps(point_A, tps_x, tps_y)
+
+    if candidates_B:
+        # Find the closest candidate to the predicted location
+        candidates_B = np.array(candidates_B)
+        distances = cdist([predicted_point_B], candidates_B, metric='euclidean')
+        best_match_idx = np.argmin(distances)
+        return tuple(candidates_B[best_match_idx])  # Best-matched candidate
+    else:
+        return predicted_point_B  # Return predicted location if no candidates are found
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="../data/images/human_face/face1.png",
+    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/cat_5.jpg",
                         help='Path to the reference image')
-    parser.add_argument('--mask_file', default=None, type=str,
+    parser.add_argument('--mask_file', default="../data/images/landmark_files/cat_5_mask.png", type=str,
                         help="landmarks file.")
-    parser.add_argument('--image_b_folder', type=str, default="../data/images/human_face/",
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/test/",
                         help='Path to the target images.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
@@ -459,10 +574,11 @@ if __name__ == "__main__":
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
     parser.add_argument('--num_sim_patches', default=20, type=int, help="number of closest patches to show.")
-    parser.add_argument('--num_ref_points', default=300, type=int, help="number of reference points to show.")
-    parser.add_argument('--sim_threshold', default=0.95, type=float, help="similarity threshold.")
+    parser.add_argument('--num_ref_points', default=100, type=int, help="number of reference points to show.")
+    parser.add_argument('--num_candidates', default=10, type=int, help="number of target point candidates.")
+    parser.add_argument('--sim_threshold', default=0.96, type=float, help="similarity threshold.")
     parser.add_argument('--num_rotation', default=4, type=int, help="number of test rotations, 4 or 8")
-    parser.add_argument('--landmark_save', default='output_landmarks.csv', type=str,
+    parser.add_argument('--output_csv', default=True, type=str,
                         help="CSV file to save landmark points.")
     args = parser.parse_args()
 
@@ -471,5 +587,6 @@ if __name__ == "__main__":
                                                 args.load_size,
                                                 args.layer, args.facet, args.bin,
                                                 args.stride, args.model_type, args.num_sim_patches,
-                                                args.sim_threshold, args.num_rotation)
+                                                args.sim_threshold, args.num_rotation, args.num_candidates,
+                                                args.output_csv)
 

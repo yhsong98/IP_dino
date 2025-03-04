@@ -25,7 +25,7 @@ def compute_vector_field(height, width, landmarks):
         count = [0, 0, 0, 0] #R,T,L,B
 
         for (x_i, y_i) in landmarks:
-            id = classify_vector_direction(np.subtract([xi,yi],[x_i,y_i]))
+            id = classify_vector_direction(np.subtract([x_i,yi],[xi,y_i]))
             count[id]+=1
 
         vector_field[index]=np.array([count[2]-count[0],count[1]-count[3]])
@@ -57,7 +57,7 @@ def classify_vector_direction(vector):
     elif 225 <= angle < 315:
         return 3  # Region [225, 315]
 
-def compute_curl(vector_field, dx=10.0, dy=10.0):
+def compute_curl(vector_field, dx=50, dy=50):
     """
     Compute the curl of a 2D vector field (P, Q).
 
@@ -106,7 +106,7 @@ def visualize_curl_on_image(image_path, landmarks):
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.imshow(image)
 
-    x_indices, y_indices = random.sample(range(0,224),100), random.sample(range(0,224),100)
+    x_indices, y_indices = random.sample(range(0,224),200), random.sample(range(0,224),200)
     picked_curl = normalized_curl[x_indices, y_indices]
     # Scatter plot of landmarks with color-coded Curl values
     scatter = ax.scatter(
