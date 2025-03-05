@@ -99,6 +99,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, loa
         # get input point from user
         #fig.suptitle('Select a point on the left image. \n Right click to stop.', fontsize=16)
         plt.draw()
+
         pts = np.asarray(plt.ginput(1, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None))
         while len(pts) == 1:
             y_coor, x_coor = int(pts[0, 1]), int(pts[0, 0])
@@ -169,9 +170,9 @@ def str2bool(v):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
     parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/cat_5.jpg", help='Path to the first image')
-    parser.add_argument('--image_b_folder', type=str, default="../data/images/wild_rotated/", help='Path to the second image.')
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/wild/", help='Path to the second image.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=4, type=int, help="""stride of first convolution layer. 
+    parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
                                                                     small stride -> higher resolution.""")
     parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
@@ -181,7 +182,7 @@ if __name__ == "__main__":
                                                                        options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
-    parser.add_argument('--num_sim_patches', default=1, type=int, help="number of closest patches to show.")
+    parser.add_argument('--num_sim_patches', default=10, type=int, help="number of closest patches to show.")
 
     args = parser.parse_args()
 

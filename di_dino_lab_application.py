@@ -173,7 +173,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
             # except ValueError:
             #     directional_sim = 1.2
             #directional_sim = directional_sim if not np.isnan(directional_sim) else 0
-            print("[", num_landmark_points,"]" ,end="")
+            print("[", num_landmark_points,",","] ",end="")
             scores_num.append(len(b_landmark_points))
             #scores_ds.append(directional_sim)
         print()
@@ -201,10 +201,40 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
         rotations = {}
         for i,rotation_degree in enumerate(rotation_degrees):
             rotations[i]=rotation_degree
+
         print('rotation_degree:',rotations[fittest_index])
         print(image_path)
 
+        # Testing skull images
+        # name = image_path.replace('image_', '')
+        # name = name.replace('.png', '')
+        # name = int(name)
+        # if 1 <= name <= 35:
+        #     gt = 3
+        # elif 36 <= name <= 96:
+        #     gt = 2
+        # elif 97 <= name <= 145:
+        #     gt = 1
+        # else:
+        #     gt = 0
+        # end
 
+        # if gt==fittest_index:
+        #     # if fittest_index != scores_num.index(curr_max):
+        #     #     count_correct+=1
+        #     #     print(colored('Corrected by Shapesim!', 'yellow'))
+        #     count_all+=1
+        #     print(colored('Correct', 'green'))
+        # else:
+        #     # if scores_num.index(curr_max) == gt:
+        #     #     count_mistake+=1
+        #     #     print(colored('Mistaken by Shapesim!', 'yellow'))
+        #     #     failure_case.append(image_path+': Mistaken by Shapesim')
+        #     # else:
+        #     failure_case.append(image_path+': Inherent Failure')
+        #     print(colored('Incorrect', 'red'))
+
+        #descs_b = descs_b_s[fittest_index]
         image_pil_b = batch_b_rotations[fittest_index][1]
         axes[1][0].clear()
         axes[1][0].set_axis_off()
@@ -301,7 +331,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
             raveled_desc_idx = num_patches_a[1] * y_descs_coor + x_descs_coor
             reveled_desc_idx_including_cls = raveled_desc_idx + 1
 
-            curr_similarities = similarities_rotations[fittest_index][0, 0, reveled_desc_idx_including_cls, 1:]
+            curr_similarities = similarities_rotations[0][0, 0, reveled_desc_idx_including_cls, 1:]
             curr_similarities = curr_similarities.reshape(num_patches_b)
 
 
@@ -322,36 +352,35 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
                         patch = plt.Circle(center, radius_B, color='red')
                         axes[1][0].add_patch(patch)
                         visible_patches.append(patch)
-            ###Regular use
-            # best_match_B = resolve_ambiguity_tps(pts[0],b_center,output_reference,output_rotated_coords)
-            # print('Sim:',sims[0])
-            # if b_center:
-            #     patch = plt.Circle(best_match_B, radius_B*2, color='green')
-            # else:
-            #     patch = plt.Circle(best_match_B, radius_B * 2, color='grey',)
-            # axes[1][0].add_patch(patch)
-            # visible_patches.append(patch)
-            #####
 
-
-            print('Sim:', sims[0])
+            best_match_B = resolve_ambiguity_tps(pts[0],b_center,output_reference,output_rotated_coords)
+            print('Sim:',sims[0])
             if b_center:
-                best_match_B,predicted_B = resolve_ambiguity_tps(pts[0], b_center, output_reference, output_rotated_coords)
-                patch_1 = plt.Circle(best_match_B, radius_B * 2, color='green')
-                patch_2 = plt.Circle(predicted_B, radius_B * 2, color='blue')
-                axes[1][0].add_patch(patch_1)
-                axes[1][0].add_patch(patch_2)
-                visible_patches.append(patch_1)
-                visible_patches.append(patch_2)
+                patch = plt.Circle(best_match_B, radius_B*2, color='green')
             else:
-                best_match_B = resolve_ambiguity_tps(pts[0], b_center, output_reference, output_rotated_coords)
-                patch = plt.Circle(best_match_B, radius_B * 2, color='blue')
-                axes[1][0].add_patch(patch)
-                visible_patches.append(patch)
-
+                patch = plt.Circle(best_match_B, radius_B * 2, color='grey',)
+            axes[1][0].add_patch(patch)
+            visible_patches.append(patch)
 
             plt.draw()
             pts = np.asarray(plt.ginput(1, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None))
+
+
+# def procrustes_analysis(points_A, points_B):
+#     """
+#     Perform Procrustes analysis to measure shape similarity.
+#
+#     :param points_A: Array of (x, y) coordinates for reference shape.
+#     :param points_B: Array of (x, y) coordinates for detected shape.
+#     :return: Procrustes distance (lower means more similar).
+#     """
+#     # Ensure points are NumPy arrays
+#     points_A = np.array(points_A)
+#     points_B = np.array(points_B)
+#
+#     # Perform Procrustes alignment
+#     mtx1, mtx2, disparity = procrustes(points_A, points_B)
+#     return disparity
 
 
 """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
@@ -364,6 +393,38 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
+
+# def draw_grid(image,save_path):
+#     """
+#     Draw a grid on the image to separate it into four areas: NW, NE, SW, SE.
+#
+#     :param image: Input image (H x W x C).
+#     :return: Image with grid and labeled areas.
+#     """
+#     # Get image dimensions
+#     image = np.asarray(image)
+#     height, width = image.shape[:2]
+#
+#     # Compute the center of the image
+#     center_x, center_y = width // 2, height // 2
+#
+#     # Draw vertical and horizontal lines
+#     grid_image = image.copy()
+#     cv2.line(grid_image, (center_x, 0), (center_x, height), (0, 255, 0), 2)  # Vertical line
+#     cv2.line(grid_image, (0, center_y), (width, center_y), (0, 255, 0), 2)  # Horizontal line
+#
+#     # Add labels for areas
+#     font = cv2.FONT_HERSHEY_SIMPLEX
+#     font_scale = 1
+#     thickness = 2
+#     color = (255, 0, 0)  # Blue for text
+#
+#     cv2.putText(grid_image, "NW", (center_x // 2, center_y // 2), font, font_scale, color, thickness)
+#     cv2.putText(grid_image, "NE", (3 * center_x // 2, center_y // 2), font, font_scale, color, thickness)
+#     cv2.putText(grid_image, "SW", (center_x // 2, 3 * center_y // 2), font, font_scale, color, thickness)
+#     cv2.putText(grid_image, "SE", (3 * center_x // 2, 3 * center_y // 2), font, font_scale, color, thickness)
+#
+#     cv2.imwrite(save_path, grid_image)
 
 
 def rotate_landmarks(image_shape, landmarks, angle):
@@ -484,27 +545,26 @@ def resolve_ambiguity_tps(point_A, candidates_B, landmarks_A, landmarks_B):
     predicted_point_B = map_point_tps(point_A, tps_x, tps_y)
 
     if candidates_B:
-        # # Find the closest candidate to the predicted location
+        # Find the closest candidate to the predicted location
         candidates_B = np.array(candidates_B)
         distances = cdist([predicted_point_B], candidates_B, metric='euclidean')
-        print("distance:",min(distances[0]))
         best_match_idx = np.argmin(distances)
-        # if min(distances[0]) < 10:
-        #     return tuple(candidates_B[best_match_idx])  # Best-matched candidate
-        # else:
-        #     return predicted_point_B
-        return tuple(candidates_B[best_match_idx]), predicted_point_B
+        return tuple(candidates_B[best_match_idx])  # Best-matched candidate
     else:
         return predicted_point_B  # Return predicted location if no candidates are found
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/cat_5.jpg", help='Path to the reference image.')
-    parser.add_argument('--mask_file', default="../data/images/landmark_files/cat_5_mask.png", type=str, help="A semantic mask can be added to focus on the target object.")
-    parser.add_argument('--image_b_folder', type=str, default="../data/images/wild_rotated_masked/", help='Path to the target images.')
+    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/cat_5.jpg",
+                        help='Path to the reference image')
+    parser.add_argument('--mask_file', default="../data/images/landmark_files/cat_5_mask.png", type=str,
+                        help="landmarks file.")
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/test/",
+                        help='Path to the target images.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
-    parser.add_argument('--stride', default=14, type=int, help="stride of first convolution layer. small stride -> higher resolution.")
+    parser.add_argument('--stride', default=14, type=int, help="""stride of first convolution layer. 
+                                                                    small stride -> higher resolution.""")
     parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
                               Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
@@ -517,8 +577,9 @@ if __name__ == "__main__":
     parser.add_argument('--num_ref_points', default=100, type=int, help="number of reference points to show.")
     parser.add_argument('--num_candidates', default=10, type=int, help="number of target point candidates.")
     parser.add_argument('--sim_threshold', default=0.96, type=float, help="similarity threshold.")
-    parser.add_argument('--num_rotation', default=8, type=int, help="number of test rotations, 4 or 8 recommended")
-    parser.add_argument('--output_csv', default=False, type=str,help="CSV file to save landmark points.")
+    parser.add_argument('--num_rotation', default=4, type=int, help="number of test rotations, 4 or 8")
+    parser.add_argument('--output_csv', default=True, type=str,
+                        help="CSV file to save landmark points.")
     args = parser.parse_args()
 
     with torch.no_grad():
