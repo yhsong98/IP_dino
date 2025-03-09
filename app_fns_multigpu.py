@@ -2,14 +2,15 @@ import argparse
 import os
 import torch
 from sklearn.cluster import DBSCAN
-from extractor_dinov2 import ViTExtractor
+
+from extractor_app_multigpu import ViTExtractor
 import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib
 import time
 import cv2
 from scipy.spatial.distance import cdist
 from scipy.interpolate import RBFInterpolator
+from PIL import ImageDraw, ImageFont
 import random
 matplotlib.use('Qt5Agg')
 
@@ -29,7 +30,7 @@ def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     return torch.stack(result_list, dim=2)  # Bx1x(t_x)x(t_y)
 
 
-def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mask_file=None, num_ref_points: int=200, load_size: int = 224, layer: int = 11,
+def show_similarity_interactive(image_path_a: str, image_path_b: str, mask_file=None, num_ref_points: int=200, load_size: int = 224, layer: int = 11,
                                 facet: str = 'key', bin: bool = False, stride: int = 14, model_type: str = 'dinov2_vits14',
                                 num_sim_patches: int = 20, sim_threshold: float = 0.96, num_candidates: int = 10,
                                 num_rotations: int = 4, output_csv: bool = False, alpha=0.3):
@@ -47,13 +48,22 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
     """
     # extract descriptors
     color_map = [
-    "blue", "green",  "cyan", "magenta", "yellow", "black", "orange", "purple", "brown",
-    "pink", "gray", "olive", "teal", "navy", "maroon", "lime", "gold", "indigo", "turquoise",
-    "violet", "aqua", "coral", "orchid", "salmon", "khaki", "plum", "darkgreen", "darkblue", "crimson"
+        (255, 255, 0, 128),  # Yellow
+        (255, 165, 0, 128),  # Orange
+        (128, 0, 128, 128),  # Purple
+        (0, 255, 255, 128),  # Cyan
+        (255, 192, 203, 128),  # Pink
+        (128, 128, 128, 128),  # Gray
+        (0, 128, 0, 128),  # Dark Green
+        (128, 0, 0, 128),  # Maroon
+        (0, 128, 128, 128),  # Teal
+        (75, 0, 130, 128),  # Indigo
+        (255, 69, 0, 128),  # Red-Orange
+        (173, 216, 230, 128)  # Light Blue
 ]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
-    patch_size = extractor.model.patch_embed.patch_size[0] if isinstance(extractor.model.patch_embed.patch_size,tuple) else extractor.model.patch_embed.patch_size
+    patch_size = extractor.model.module.patch_embed.patch_size[0] if isinstance(extractor.model.module.patch_embed.patch_size,tuple) else extractor.model.module.patch_embed.patch_size
     image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
     num_patches_a, load_size_a = extractor.num_patches, extractor.load_size
@@ -106,157 +116,160 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
             landmarks.append(pt)
 
 
-    if os.path.isdir(image_folder_path_b):
-        all_files = os.listdir(image_folder_path_b)
-        images = [file for file in all_files if file.endswith(('.jpg', '.png', '.jpeg'))]
-        images.sort()
-    elif os.path.isfile(image_folder_path_b):
-        images = [image_folder_path_b]
-    #random.shuffle(images)
+    # if os.path.isdir(image_folder_path_b):
+    #     all_files = os.listdir(image_folder_path_b)
+    #     images = [file for file in all_files if file.endswith(('.jpg', '.png', '.jpeg'))]
+    #     images.sort()
+    # elif os.path.isfile(image_folder_path_b):
+    #     images = [image_folder_path_b]
+    # #random.shuffle(images)
 
-    for image_path in images:
-        start=time.time()
-        if os.path.isdir(image_folder_path_b):
-            image_path_b = os.path.join(image_folder_path_b, image_path)
-        elif os.path.isfile(image_folder_path_b):
-            image_path_b = image_folder_path_b
-        batch_b_rotations = extractor.preprocess(image_path_b, load_size, rotate=num_rotations)
+    # for image_path in images:
+    #     start=time.time()
+    #     if os.path.isdir(image_folder_path_b):
+    #         image_path_b = os.path.join(image_folder_path_b, image_path)
+    #     elif os.path.isfile(image_folder_path_b):
+    #         image_path_b = image_folder_path_b
+    start = time.time()
+    batch_b_rotations = extractor.preprocess(image_path_b, load_size, rotate=num_rotations)
 
-        descs_b_s = []
-        num_patches_b_rotations, load_size_b_rotations = [], []
-        for batch in batch_b_rotations:
-            descs_b_s.append(extractor.extract_descriptors(batch[0].to(device), layer, facet, bin, include_cls=True))
-            num_patches_b_rotations.append(extractor.num_patches)
-            load_size_b_rotations.append(extractor.load_size)
-
-
-        # plot image_a and the chosen patch. if nothing marked chosen patch is cls patch.
-
-        ptses = np.asarray(landmarks)
-        a_landmark_points_rotations = []
-        b_landmark_points_rotations = []
-        landmarks_ids_rotation = []
-        similarities_rotations = []
-        multi_curr_similarities_rotations = []
-
-        #test for remote control
-        for id, descs_b_rot in enumerate(descs_b_s):
-            a_landmark_points = []
-            b_landmark_points = []
-            landmark_ids = []
-            similarities = chunk_cosine_sim(descs_a, descs_b_rot)
-            similarities_rotations.append(similarities)
-            multi_curr_similarities = []
-            for idx, pts in enumerate(ptses):
-                y_coor, x_coor = int(pts[1]), int(pts[0])
-                new_H = patch_size / stride * (load_size_a[0] // patch_size - 1) + 1
-                new_W = patch_size / stride * (load_size_a[1] // patch_size - 1) + 1
-                y_descs_coor = int(new_H / load_size_a[0] * y_coor)
-                x_descs_coor = int(new_W / load_size_a[1] * x_coor)
-
-                # get and draw current similarities
-                raveled_desc_idx = num_patches_a[1] * y_descs_coor + x_descs_coor
-                reveled_desc_idx_including_cls = raveled_desc_idx + 1
-
-                curr_similarities = similarities[0, 0, reveled_desc_idx_including_cls, 1:]
-                curr_similarities = curr_similarities.reshape(num_patches_b_rotations[id])
-
-                multi_curr_similarities.append(curr_similarities)
-            multi_curr_similarities_rotations.append(multi_curr_similarities)
-
-            # get and draw most similar points
-
-            for landmark_id, curr_similarities in enumerate(multi_curr_similarities):
-                sim, idx = torch.topk(curr_similarities.flatten(), 1)
-                if sim > sim_threshold:
-                    center_a = ptses[landmark_id]
-                    a_landmark_points.append(center_a)
-                    b_y_descs_coor, b_x_descs_coor = torch.div(idx, num_patches_b_rotations[id][1], rounding_mode='floor'), idx % num_patches_b_rotations[id][1]
-                    center_b = ((b_x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
-                                (b_y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-                    b_landmark_points.append([center_b[0].cpu().numpy()[0],center_b[1].cpu().numpy()[0]])
-
-                    landmark_ids.append(landmark_id)
-
-            a_landmark_points_rotations.append(a_landmark_points)
-            b_landmark_points_rotations.append(b_landmark_points)
-            landmarks_ids_rotation.append(landmark_ids)
+    descs_b_s = []
+    num_patches_b_rotations, load_size_b_rotations = [], []
+    for batch in batch_b_rotations:
+        descs_b_s.append(extractor.extract_descriptors(batch[0].to(device), layer, facet, bin, include_cls=True))
+        num_patches_b_rotations.append(extractor.num_patches)
+        load_size_b_rotations.append(extractor.load_size)
 
 
-        scores_num = []
-        for a_landmark_points, b_landmark_points in zip(a_landmark_points_rotations,b_landmark_points_rotations):
-            scores_num.append(len(b_landmark_points))
+    # plot image_a and the chosen patch. if nothing marked chosen patch is cls patch.
 
-        fittest_index = scores_num.index(max(scores_num))
+    ptses = np.asarray(landmarks)
+    a_landmark_points_rotations = []
+    b_landmark_points_rotations = []
+    landmarks_ids_rotation = []
+    similarities_rotations = []
+    multi_curr_similarities_rotations = []
 
+    #test for remote control
+    for id, descs_b_rot in enumerate(descs_b_s):
+        a_landmark_points = []
+        b_landmark_points = []
+        landmark_ids = []
+        similarities = chunk_cosine_sim(descs_a, descs_b_rot)
+        similarities_rotations.append(similarities)
+        multi_curr_similarities = []
+        for idx, pts in enumerate(ptses):
+            y_coor, x_coor = int(pts[1]), int(pts[0])
+            new_H = patch_size / stride * (load_size_a[0] // patch_size - 1) + 1
+            new_W = patch_size / stride * (load_size_a[1] // patch_size - 1) + 1
+            y_descs_coor = int(new_H / load_size_a[0] * y_coor)
+            x_descs_coor = int(new_W / load_size_a[1] * x_coor)
 
+            # get and draw current similarities
+            raveled_desc_idx = num_patches_a[1] * y_descs_coor + x_descs_coor
+            reveled_desc_idx_including_cls = raveled_desc_idx + 1
 
+            curr_similarities = similarities[0, 0, reveled_desc_idx_including_cls, 1:]
+            curr_similarities = curr_similarities.reshape(num_patches_b_rotations[id])
 
-        rotation_degrees = [angle for angle in np.linspace(0, 360, num_rotations, endpoint=False)]
-        rotations = {}
-        for i,rotation_degree in enumerate(rotation_degrees):
-            rotations[i]=rotation_degree
-        print('rotation_degree:',rotations[fittest_index])
-        print(image_path)
+            multi_curr_similarities.append(curr_similarities)
+        multi_curr_similarities_rotations.append(multi_curr_similarities)
 
-        image_pil_b = batch_b_rotations[fittest_index][1]
-
-        real_landmark_points=[]
-        multi_curr_similarities = multi_curr_similarities_rotations[fittest_index]
+        # get and draw most similar points
 
         for landmark_id, curr_similarities in enumerate(multi_curr_similarities):
-            center_b_candidates = []
-            sims, idxes = torch.topk(curr_similarities.flatten(), num_sim_patches)
-            for sim,idx in zip(sims, idxes):
-                if sim > sim_threshold:
-                    b_y_descs_coor, b_x_descs_coor = torch.div(idx, num_patches_b_rotations[id][1], rounding_mode='floor'), idx % \
-                                                     num_patches_b_rotations[id][1]
-                    center_b = ((b_x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
-                                (b_y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-                    center_b_candidates.append([center_b[0].cpu().numpy(), center_b[1].cpu().numpy()])
+            sim, idx = torch.topk(curr_similarities.flatten(), 1)
+            if sim > sim_threshold:
+                center_a = ptses[landmark_id]
+                a_landmark_points.append(center_a)
+                b_y_descs_coor, b_x_descs_coor = torch.div(idx, num_patches_b_rotations[id][1], rounding_mode='floor'), idx % num_patches_b_rotations[id][1]
+                center_b = ((b_x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
+                            (b_y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
+                b_landmark_points.append([center_b[0].cpu().numpy()[0],center_b[1].cpu().numpy()[0]])
 
-            if len(center_b_candidates) > 1 and classify_landmark(center_b_candidates)['label']:
-                real_landmark_points.append(landmark_id)
+                landmark_ids.append(landmark_id)
 
-        a_landmark_points = a_landmark_points_rotations[fittest_index]
-        b_landmark_points = b_landmark_points_rotations[fittest_index]
-        landmark_ids = landmarks_ids_rotation[fittest_index]
-
-        print('num_landmark_points:',len(real_landmark_points))
-        print('num_confident_points:',len(a_landmark_points))
-
-        output_reference = []
-        output_rotated_coords = []
-
-        count=0
-        for id, pt in enumerate(zip(a_landmark_points,b_landmark_points)):
-            if landmark_ids[id] in real_landmark_points:
-                output_reference.append(pt[0])
-                output_rotated_coords.append(pt[1])
-                count += 1
-
-        output_target = []
-        landmarks_on_original = rotate_landmarks(image_pil_b.size,output_rotated_coords,rotations[fittest_index])
-        for id,pt in enumerate(landmarks_on_original):
-            output_target.append(pt)
+        a_landmark_points_rotations.append(a_landmark_points)
+        b_landmark_points_rotations.append(b_landmark_points)
+        landmarks_ids_rotation.append(landmark_ids)
 
 
-        if output_csv:
-            np.savetxt('landmarks_A.csv',output_reference,delimiter=',')
-            np.savetxt('landmarks_B.csv',output_target,delimiter=',')
-            #np.savetxt('rotated_coords.csv',rotated_coords,delimiter=',')
+    scores_num = []
+    for a_landmark_points, b_landmark_points in zip(a_landmark_points_rotations,b_landmark_points_rotations):
+        scores_num.append(len(b_landmark_points))
 
-        print('time:', time.time() - start)
-        print("-----------")
+    fittest_index = scores_num.index(max(scores_num))
 
-    #return output_reference, output_target, output_rotated_coords, rotations[fittest_index], similarities_rotations[fittest_index]
-    return image_pil_a,image_pil_b
 
-def find_correspondence(picked_point, patch_size, stride, load_size_a, image_b_size, num_patches_a, num_patches_b, landmarks_a, landmarks_b, similarities, rotation, num_candidates, sim_threshold):
+
+
+    rotation_degrees = [angle for angle in np.linspace(0, 360, num_rotations, endpoint=False)]
+    rotations = {}
+    for i,rotation_degree in enumerate(rotation_degrees):
+        rotations[i]=rotation_degree
+    print('rotation_degree:',rotations[fittest_index])
+
+    image_pil_b = batch_b_rotations[fittest_index][1]
+
+    real_landmark_points=[]
+    multi_curr_similarities = multi_curr_similarities_rotations[fittest_index]
+
+    for landmark_id, curr_similarities in enumerate(multi_curr_similarities):
+        center_b_candidates = []
+        sims, idxes = torch.topk(curr_similarities.flatten(), num_sim_patches)
+        for sim,idx in zip(sims, idxes):
+            if sim > sim_threshold:
+                b_y_descs_coor, b_x_descs_coor = torch.div(idx, num_patches_b_rotations[fittest_index][1], rounding_mode='floor'), idx % \
+                                                 num_patches_b_rotations[fittest_index][1]
+                center_b = ((b_x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
+                            (b_y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
+                center_b_candidates.append([center_b[0].cpu().numpy(), center_b[1].cpu().numpy()])
+
+        if len(center_b_candidates) > 1 and classify_landmark(center_b_candidates)['label']:
+            real_landmark_points.append(landmark_id)
+
+    a_landmark_points = a_landmark_points_rotations[fittest_index]
+    b_landmark_points = b_landmark_points_rotations[fittest_index]
+    landmark_ids = landmarks_ids_rotation[fittest_index]
+
+    print('num_landmark_points:',len(real_landmark_points))
+    print('num_confident_points:',len(a_landmark_points))
+
+    output_reference = []
+    output_rotated_coords = []
+
+    count=0
+    for id, pt in enumerate(zip(a_landmark_points,b_landmark_points)):
+        if landmark_ids[id] in real_landmark_points:
+            output_reference.append(pt[0])
+            output_rotated_coords.append(pt[1])
+            count += 1
+
+    output_target = []
+    landmarks_on_original = rotate_landmarks(image_pil_b.size,output_rotated_coords,rotations[fittest_index])
+    for id,pt in enumerate(landmarks_on_original):
+        output_target.append(pt)
+
+
+    if output_csv:
+        np.savetxt('landmarks_A.csv',output_reference,delimiter=',')
+        np.savetxt('landmarks_B.csv',output_target,delimiter=',')
+        #np.savetxt('rotated_coords.csv',rotated_coords,delimiter=',')
+
+    print('time:', time.time() - start)
+    print("-----------")
+
+    marked_image_a = draw_landmarks(image_pil_a,output_reference,color_map,radius=5)
+    marked_image_b = draw_landmarks(image_pil_b,output_rotated_coords,color_map,radius=5)
+
+
+    return marked_image_a, marked_image_b, patch_size, stride, load_size_a, image_pil_b.size, num_patches_a, num_patches_b_rotations[fittest_index], output_reference, output_rotated_coords, similarities_rotations[fittest_index], rotations[fittest_index]
+    #return marked_image_a, marked_image_b
+
+def find_correspondence(image_a, image_b, original_image_a,original_image_b,picked_point, patch_size, stride, load_size_a,
+                        image_b_size, num_patches_a, num_patches_b, landmarks_a, landmarks_b, similarities, rotation, num_candidates=10, sim_threshold=0.96):
         #Interactive Part
     pts = np.asarray(picked_point)
-
-
     print('Picked point at:', pts)
 
     y_coor, x_coor = int(pts[0,1]), int(pts[0,0])
@@ -284,24 +297,37 @@ def find_correspondence(picked_point, patch_size, stride, load_size_a, image_b_s
 
     print('Sim:', sims[0])
     if b_center:
-        best_match_B, predicted_B, min_distance = resolve_ambiguity_tps(pts[0], b_center, landmarks_a, landmarks_b)
+        try:
+            best_match_B, predicted_B, min_distance = resolve_ambiguity_tps(pts[0], b_center, landmarks_a, landmarks_b)
 
-        if min_distance>40:
-            target_point_rotated = best_match_B
-            color = 'green'
+            if min_distance>40:
+                target_point_rotated = best_match_B
+                color = (0, 255, 0, 255)
 
-        else:
+            else:
+                target_point_rotated = b_center[0]
+                color =  (255, 0, 0, 255)
+        except:
             target_point_rotated = b_center[0]
-            color = 'red'
+            color = (255, 0, 0, 255)
+
     else:
         best_match_B = resolve_ambiguity_tps(pts[0], b_center, landmarks_a, landmarks_b)
         target_point_rotated = best_match_B
-        color = 'blue'
+        color =  (0, 0, 255, 255)
+
 
     point_on_origin = [target_point_rotated]
     point_on_origin = rotate_landmarks(image_b_size, point_on_origin, rotation)
 
-    return target_point_rotated, point_on_origin, color
+    draw_landmarks(image_a,pts, color=[(255, 0, 0, 255)],radius=7,start_index=0)
+    draw_landmarks(image_b,[target_point_rotated], color=[color],radius=7,start_index=0)
+    draw_landmarks(original_image_a,pts, color=[(255, 0, 0, 255)],radius=7,start_index=0)
+    draw_landmarks(original_image_b,point_on_origin, color=[color],radius=7,start_index=0)
+
+
+
+    return image_a, image_b, original_image_a, original_image_b
 
 
 """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
@@ -315,6 +341,29 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+
+def draw_landmarks(image, landmarks, color, radius, start_index=1):
+    """
+    Draws landmarks on an image with a given color and labels them numerically.
+
+    Parameters:
+    - image (PIL.Image): The image to draw on.
+    - landmarks (list of tuples): A list of (x, y) coordinates for landmarks.
+    - color (str or tuple): The color of the landmarks.
+    - start_index (int): The starting number for labeling landmarks.
+
+    Returns:
+    - PIL.Image: The image with landmarks drawn.
+    """
+    #image = image.convert('RGBA')
+    draw = ImageDraw.Draw(image, 'RGBA')
+    font = ImageFont.load_default()  # Load a default font for labeling
+
+    for i, (x, y) in enumerate(landmarks):
+        draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color[i%len(color)], outline=color[i%len(color)])  # Draw a circle
+        draw.text((x + 7, y - 7), str(start_index + i), fill='black', font=font)  # Label with number
+
+    return image
 
 def rotate_landmarks(image_shape, landmarks, angle):
     """
@@ -467,7 +516,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_sim_patches', default=20, type=int, help="number of closest patches to show.")
     parser.add_argument('--num_ref_points', default=200, type=int, help="number of reference points to show.")
     parser.add_argument('--num_candidates', default=10, type=int, help="number of target point candidates.")
-    parser.add_argument('--sim_threshold', default=0.96, type=float, help="similarity threshold.")
+    parser.add_argument('--sim_threshold', default=0.95, type=float, help="similarity threshold.")
     parser.add_argument('--num_rotation', default=8, type=int, help="number of test rotations, 4 or 8 recommended")
     parser.add_argument('--output_csv', default=False, type=str,help="CSV file to save landmark points.")
     args = parser.parse_args()

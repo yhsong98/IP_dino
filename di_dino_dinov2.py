@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 from sklearn.cluster import DBSCAN
-from extractor_dinov2 import ViTExtractor
+from extractor_multigpu import ViTExtractor
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
@@ -53,7 +53,8 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
 ]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
-    patch_size = extractor.model.patch_embed.patch_size[0] if isinstance(extractor.model.patch_embed.patch_size,tuple) else extractor.model.patch_embed.patch_size
+    #patch_size = extractor.model.patch_embed.patch_size[0] if isinstance(extractor.model.patch_embed.patch_size,tuple) else extractor.model.patch_embed.patch_size
+    patch_size=14
     image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
     num_patches_a, load_size_a = extractor.num_patches, extractor.load_size
@@ -376,23 +377,28 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
 
             print('Sim:', sims[0])
             if b_center:
-                best_match_B, predicted_B, min_distance = resolve_ambiguity_tps(pts[0], b_center, output_reference, output_rotated_coords)
-                # patch_1 = plt.Circle(best_match_B, radius_B, color='green')
-                # patch_2 = plt.Circle(predicted_B, radius_B, color='blue')
-                # axes[1][0].add_patch(patch_1)
-                # axes[1][0].add_patch(patch_2)
-                # visible_patches.append(patch_1)
-                # visible_patches.append(patch_2)
-                if min_distance>40:
-                    patch = plt.Circle(best_match_B, radius_B, color='green')
-                    axes[1][0].add_patch(patch)
-                    visible_patches.append(patch)
-                    color='green'
-                else:
+                try:
+                    best_match_B, predicted_B, min_distance = resolve_ambiguity_tps(pts[0], b_center, output_reference, output_rotated_coords)
+                    # patch_1 = plt.Circle(best_match_B, radius_B, color='green')
+                    # patch_2 = plt.Circle(predicted_B, radius_B, color='blue')
+                    # axes[1][0].add_patch(patch_1)
+                    # axes[1][0].add_patch(patch_2)
+                    # visible_patches.append(patch_1)
+                    # visible_patches.append(patch_2)
+                    if min_distance>40:
+                        patch = plt.Circle(best_match_B, radius_B, color='green')
+                        axes[1][0].add_patch(patch)
+                        visible_patches.append(patch)
+                        color='green'
+                    else:
+                        patch = plt.Circle(b_center[0], radius_B, color='red')
+                        axes[1][0].add_patch(patch)
+                        visible_patches.append(patch)
+                        color = 'red'
+                except ValueError:
                     patch = plt.Circle(b_center[0], radius_B, color='red')
                     axes[1][0].add_patch(patch)
                     visible_patches.append(patch)
-                    color = 'red'
             else:
                 best_match_B = resolve_ambiguity_tps(pts[0], b_center, output_reference, output_rotated_coords)
                 patch = plt.Circle(best_match_B, radius_B, color='blue')
@@ -558,9 +564,9 @@ def resolve_ambiguity_tps(point_A, candidates_B, landmarks_A, landmarks_B):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/cat_5.jpg", help='Path to the reference image.')
-    parser.add_argument('--mask_file', default="../data/images/landmark_files/cat_5_mask.png", type=str, help="A semantic mask can be added to focus on the target object.")
-    parser.add_argument('--image_b_folder', type=str, default="../data/images/wild_rotated_masked/", help='Path to the target images.')
+    parser.add_argument('--image_a', type=str, default="../data/images/horse/horse_2.png", help='Path to the reference image.')
+    parser.add_argument('--mask_file', default=None, type=str, help="A semantic mask can be added to focus on the target object.")
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/horse/horse3.png", help='Path to the target images.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="stride of first convolution layer. small stride -> higher resolution.")
     parser.add_argument('--model_type', default='dinov2_vits14', type=str,
