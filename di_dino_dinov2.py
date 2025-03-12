@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 from sklearn.cluster import DBSCAN
-from extractor_multigpu import ViTExtractor
+from extractor_dinov2 import ViTExtractor
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
@@ -10,6 +10,7 @@ import time
 import cv2
 from scipy.spatial.distance import cdist
 from scipy.interpolate import RBFInterpolator
+from skimage.transform import PiecewiseAffineTransform, warp
 import random
 matplotlib.use('Qt5Agg')
 
@@ -32,7 +33,7 @@ def chunk_cosine_sim(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
 def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mask_file, num_ref_points: int, load_size: int = 224, layer: int = 11,
                                 facet: str = 'key', bin: bool = False, stride: int = 14, model_type: str = 'dinov2_vits14',
                                 num_sim_patches: int = 1, sim_threshold: float = 0.95, num_candidates: int = 10,
-                                num_rotations: int = 4, output_csv: bool = False, alpha=0.3):
+                                num_rotations: int = 4, output_csv: bool = False, distance_threshold=10, alpha=0.3):
     """
      finding similarity between a descriptor in one image to the all descriptors in the other image.
      :param image_path_a: path to first image.
@@ -51,10 +52,10 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
     "pink", "gray", "olive", "teal", "navy", "maroon", "lime", "gold", "indigo", "turquoise",
     "violet", "aqua", "coral", "orchid", "salmon", "khaki", "plum", "darkgreen", "darkblue", "crimson"
 ]
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = 'cuda:1' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
-    #patch_size = extractor.model.patch_embed.patch_size[0] if isinstance(extractor.model.patch_embed.patch_size,tuple) else extractor.model.patch_embed.patch_size
-    patch_size=14
+    patch_size = extractor.model.patch_embed.patch_size[0] if isinstance(extractor.model.patch_embed.patch_size,tuple) else extractor.model.patch_embed.patch_size
+    #patch_size=14
     image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
     num_patches_a, load_size_a = extractor.num_patches, extractor.load_size
@@ -277,8 +278,8 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
 
         output_reference = []
         output_rotated_coords = []
-        radius_A = patch_size // 4
-        radius_B = radius_A*image_pil_b.size[0]/image_pil_a.size[0]
+        radius_A = image_pil_a.size[0] / 80
+        radius_B = image_pil_b.size[0] / 80
 
         count=0
         for id, pt in enumerate(zip(a_landmark_points,b_landmark_points)):
@@ -346,6 +347,12 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
             sims, idxs = torch.topk(curr_similarities, num_candidates)
             if sims[0] < sim_threshold:
                 b_center=None
+                y_descs_coor, x_descs_coor = torch.div(idxs[0], num_patches_b[1], rounding_mode='floor'), idxs[0] % \
+                                                                                                      num_patches_b[1]
+                center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
+                          (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
+                # patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
+                b_cand = [center[0].cpu().numpy(), center[1].cpu().numpy()]
 
             else:
                 b_center = []
@@ -356,36 +363,13 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
                     # patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
                     b_center.append([center[0].cpu().numpy(), center[1].cpu().numpy()])
 
-                    # for center in b_center:
-                    #     patch = plt.Circle(center, radius_B, color='red')
-                    #     axes[1][0].add_patch(patch)
-                    #     visible_patches.append(patch)
-                # patch = plt.Circle(b_center[0], radius_B, color='red')
-                # axes[1][0].add_patch(patch)
-                #visible_patches.append(patch)
-            ###Regular use
-            # best_match_B = resolve_ambiguity_tps(pts[0],b_center,output_reference,output_rotated_coords)
-            # print('Sim:',sims[0])
-            # if b_center:
-            #     patch = plt.Circle(best_match_B, radius_B*2, color='green')
-            # else:
-            #     patch = plt.Circle(best_match_B, radius_B * 2, color='grey',)
-            # axes[1][0].add_patch(patch)
-            # visible_patches.append(patch)
-            #####
-
-
             print('Sim:', sims[0])
-            if b_center:
-                try:
-                    best_match_B, predicted_B, min_distance = resolve_ambiguity_tps(pts[0], b_center, output_reference, output_rotated_coords)
-                    # patch_1 = plt.Circle(best_match_B, radius_B, color='green')
-                    # patch_2 = plt.Circle(predicted_B, radius_B, color='blue')
-                    # axes[1][0].add_patch(patch_1)
-                    # axes[1][0].add_patch(patch_2)
-                    # visible_patches.append(patch_1)
-                    # visible_patches.append(patch_2)
-                    if min_distance>40:
+
+            try:
+                if b_center:
+                    best_match_B, predicted_B, min_distance = resolve_ambiguity_mls(pts[0], b_center, output_reference, output_rotated_coords)
+
+                    if min_distance>distance_threshold:
                         patch = plt.Circle(best_match_B, radius_B, color='green')
                         axes[1][0].add_patch(patch)
                         visible_patches.append(patch)
@@ -395,17 +379,22 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
                         axes[1][0].add_patch(patch)
                         visible_patches.append(patch)
                         color = 'red'
-                except ValueError:
-                    patch = plt.Circle(b_center[0], radius_B, color='red')
+                else:
+                    best_match_B = resolve_ambiguity_mls(pts[0], b_center, output_reference, output_rotated_coords)
+                    patch = plt.Circle(best_match_B, radius_B, color='blue')
                     axes[1][0].add_patch(patch)
                     visible_patches.append(patch)
-            else:
-                best_match_B = resolve_ambiguity_tps(pts[0], b_center, output_reference, output_rotated_coords)
-                patch = plt.Circle(best_match_B, radius_B, color='blue')
+                    color = 'blue'
+
+            except:
+                y_descs_coor, x_descs_coor = torch.div(idxs[0], num_patches_b[1], rounding_mode='floor'), idxs[0] % \
+                                                                                                      num_patches_b[1]
+                center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
+                          (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
+                patch = plt.Circle((center[0].cpu().numpy(), center[1].cpu().numpy()), radius_B, color='red')
                 axes[1][0].add_patch(patch)
                 visible_patches.append(patch)
-                color = 'blue'
-
+                color = 'red'
             point_on_origin = [patch.center]
             landmarks_on_original = rotate_landmarks(image_pil_b.size, point_on_origin, rotations[fittest_index])
             patch_origin = plt.Circle(landmarks_on_original[0], radius_B, color=color)
@@ -463,6 +452,24 @@ def rotate_landmarks(image_shape, landmarks, angle):
     return rotated_landmarks
 
 
+def apply_mls(image, src_points, dst_points):
+    """
+    Apply Moving Least Squares (MLS) deformation to an image.
+
+    :param image: Input image.
+    :param src_points: Source landmark points.
+    :param dst_points: Target deformed points.
+    :return: Warped image.
+    """
+    src = np.array(src_points, dtype=np.float32)
+    dst = np.array(dst_points, dtype=np.float32)
+
+    tform = PiecewiseAffineTransform()
+    tform.estimate(src, dst)
+
+    warped = warp(image, tform)
+    return (warped * 255).astype(np.uint8)
+
 
 def classify_landmark(candidate_points, eps=20, min_samples=2):
     """
@@ -504,6 +511,66 @@ def classify_landmark(candidate_points, eps=20, min_samples=2):
         label = False
 
     return {"label": label, "num_clusters": num_clusters}
+
+
+def estimate_mls_transform(landmarks_A, landmarks_B):
+    """
+    Estimate an MLS transformation using Piecewise Affine.
+
+    :param landmarks_A: List of (x, y) landmark coordinates in Image A.
+    :param landmarks_B: List of (x, y) corresponding landmark coordinates in Image B.
+    :return: Piecewise Affine Transform object.
+    """
+    landmarks_A = np.array(landmarks_A, dtype=np.float32)
+    landmarks_B = np.array(landmarks_B, dtype=np.float32)
+
+    # Create a piecewise affine transformation
+    tform = PiecewiseAffineTransform()
+    tform.estimate(landmarks_A, landmarks_B)
+
+    return tform
+
+
+def map_point_mls(point_A, tform):
+    """
+    Map a point using the MLS transformation.
+
+    :param point_A: (x, y) coordinate in Image A.
+    :param tform: MLS transformation object.
+    :return: Transformed (x, y) point in Image B.
+    """
+    point_A = np.array([point_A], dtype=np.float32)  # Reshape input point
+    transformed_point = tform(point_A)  # Apply transformation
+    return tuple(transformed_point[0])  # Return mapped point
+
+
+def resolve_ambiguity_mls(point_A, candidates_B, landmarks_A, landmarks_B):
+    """
+    Resolve ambiguity using MLS warping and landmark correlation.
+
+    :param point_A: Selected (x, y) coordinate in Image A.
+    :param candidates_B: List of (x, y) candidate coordinates in Image B.
+    :param landmarks_A: List of landmark coordinates in Image A.
+    :param landmarks_B: List of corresponding landmark coordinates in Image B.
+    :return: Best-matched coordinate in Image B, predicted coordinate, min distance.
+    """
+    # Compute MLS transformation
+    tform = estimate_mls_transform(landmarks_A, landmarks_B)
+
+    # Predict where the point should be in Image B
+    predicted_point_B = map_point_mls(point_A, tform)
+
+    if candidates_B:
+        # Find the closest candidate to the predicted location
+        candidates_B = np.array(candidates_B)
+        distances = cdist([predicted_point_B], candidates_B, metric='euclidean')
+        min_distance = min(distances[0])
+        print("min_distance:", min_distance)
+
+        best_match_idx = np.argmin(distances)
+        return tuple(candidates_B[best_match_idx]), predicted_point_B, min_distance
+    else:
+        return predicted_point_B
 
 def estimate_tps_transform(landmarks_A, landmarks_B):
     """
@@ -564,9 +631,9 @@ def resolve_ambiguity_tps(point_A, candidates_B, landmarks_A, landmarks_B):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate similarity inspection between two images.')
-    parser.add_argument('--image_a', type=str, default="../data/images/horse/horse_2.png", help='Path to the reference image.')
+    parser.add_argument('--image_a', type=str, default="../data/images/landmark_files/frame_0000.jpg", help='Path to the reference image.')
     parser.add_argument('--mask_file', default=None, type=str, help="A semantic mask can be added to focus on the target object.")
-    parser.add_argument('--image_b_folder', type=str, default="../data/images/horse/horse3.png", help='Path to the target images.')
+    parser.add_argument('--image_b_folder', type=str, default="../data/images/drilling_video_frames_6mkv/", help='Path to the target images.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="stride of first convolution layer. small stride -> higher resolution.")
     parser.add_argument('--model_type', default='dinov2_vits14', type=str,
@@ -578,9 +645,10 @@ if __name__ == "__main__":
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
     parser.add_argument('--bin', default='False', type=str2bool, help="create a binned descriptor if True.")
     parser.add_argument('--num_sim_patches', default=20, type=int, help="number of closest patches to show.")
-    parser.add_argument('--num_ref_points', default=200, type=int, help="number of reference points to show.")
+    parser.add_argument('--num_ref_points', default=1500, type=int, help="number of reference points to show.")
     parser.add_argument('--num_candidates', default=10, type=int, help="number of target point candidates.")
-    parser.add_argument('--sim_threshold', default=0.96, type=float, help="similarity threshold.")
+    parser.add_argument('--sim_threshold', default=0.965, type=float, help="similarity threshold.")
+    parser.add_argument('--distance_threshold', default=30, type=float, help="distance threshold.")
     parser.add_argument('--num_rotation', default=8, type=int, help="number of test rotations, 4 or 8 recommended")
     parser.add_argument('--output_csv', default=False, type=str,help="CSV file to save landmark points.")
     args = parser.parse_args()
@@ -591,5 +659,5 @@ if __name__ == "__main__":
                                                 args.layer, args.facet, args.bin,
                                                 args.stride, args.model_type, args.num_sim_patches,
                                                 args.sim_threshold, args.num_rotation, args.num_candidates,
-                                                args.output_csv)
+                                                args.output_csv,  args.distance_threshold)
 

@@ -54,9 +54,9 @@ def interactive_matching(image_a, image_b, similarity_threshold=0.95, num_ref_po
     return result_a, result_b ,result_a, result_b, patch_size, stride, load_size_a, image_b_size, num_patches_a, num_patches_b, output_reference, output_rotated_coords, similarities, rotation
 
 def mark_correspondence(image_a, evt: gr.SelectData, image_b, original_image_a, original_image_b, patch_size, stride, load_size_a,
-                        image_b_size, num_patches_a, num_patches_b, landmarks_a, landmarks_b, similarities, rotation):
+                        image_b_size, num_patches_a, num_patches_b, landmarks_a, landmarks_b, similarities, rotation, similarity_threshold,distance_threshold):
     marked_a, marked_b, marked_orig_a, marked_orig_b = find_correspondence(image_a, image_b, original_image_a,original_image_b, [evt.index], patch_size, stride, load_size_a,
-                        image_b_size, num_patches_a, num_patches_b, landmarks_a, landmarks_b, similarities,rotation, num_candidates=10, sim_threshold=0.96)
+                        image_b_size, num_patches_a, num_patches_b, landmarks_a, landmarks_b, similarities,rotation, num_candidates=10, sim_threshold=similarity_threshold,distance_threshold=distance_threshold)
     return marked_a, marked_b, marked_orig_a, marked_orig_b
 
 
@@ -64,7 +64,19 @@ def mark_correspondence(image_a, evt: gr.SelectData, image_b, original_image_a, 
 demo = gr.Blocks()
 with demo:
     gr.Markdown("## Image Correspondence Finder")
-    gr.Markdown("Upload two images and click on Image A (left) to find the corresponding location in Image B (right).")
+    gr.Markdown("### Instruction")
+    gr.Markdown("""
+    1. Upload two images, left one as reference and right as target;
+    2. After images are uploaded, click 'Find landmarks' button;
+    3. After landmarks are extracted, click on either of the images on the left to find the corresponding point on right image.
+    """)
+    gr.Markdown("### Adjustable parameters")
+    gr.Markdown("""
+    1. Similarity Threshold: the confidence of identifying correponding points;
+    2. Distance Threshold: the distance shreshold between corresponding point found by ViT and the point location estimated by landmarks
+    3. Number of Reference Points: how many random points on the reference image wil be classified to be a landmark or not.
+    """)
+
     if extractor:
         gr.Markdown(model_type+' has been initialized with stride '+str(stride)+'.')
 
@@ -86,8 +98,10 @@ with demo:
     image_b.upload(save_original_image, inputs=[image_b], outputs=[image_b, original_image_b])
 
     with gr.Row():
-        similarity_threshold = gr.Slider(minimum=0, maximum=1, step=0.01, value=0.95, label="Similarity Threshold", interactive=True)
-        num_ref_points = gr.Slider(minimum=0, maximum=500, step=10, value=200, label="Number of Reference Points",
+        similarity_threshold = gr.Slider(minimum=0, maximum=1, step=0.001, value=0.95, label="Similarity Threshold", interactive=True)
+        distance_threshold = gr.Slider(minimum=0, maximum=50, step=5, value=10, label="Distance Threshold",
+                                         interactive=True)
+        num_ref_points = gr.Slider(minimum=0, maximum=1500, step=100, value=200, label="Number of Reference Points",
                                          interactive=True)
         btn = gr.Button("Find landmarks")
     with gr.Row():
@@ -104,13 +118,13 @@ with demo:
     marked_a.select(mark_correspondence,
                     inputs=[marked_a_origin, marked_b_origin, original_image_a, original_image_b,patch_size, stride, load_size_a,
                                                  image_b_size, num_patches_a, num_patches_b, output_reference,
-                            output_rotated_coords, similarities, rotation],
+                            output_rotated_coords, similarities, rotation, similarity_threshold, distance_threshold],
                     outputs=[marked_a, marked_b, image_a, image_b])
     image_a.select(mark_correspondence,
                    inputs=[marked_a_origin, marked_b_origin, original_image_a, original_image_b, patch_size, stride,
                            load_size_a, image_b_size, num_patches_a, num_patches_b, output_reference,
-                           output_rotated_coords, similarities, rotation],
+                           output_rotated_coords, similarities, rotation, similarity_threshold, distance_threshold],
                    outputs=[marked_a, marked_b,image_a, image_b])
 
 
-demo.launch()#)
+demo.launch(share=True)#)

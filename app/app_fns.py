@@ -269,7 +269,7 @@ def show_similarity_interactive(image_path_a: str, image_path_b: str, extractor:
     #return marked_image_a, marked_image_b
 
 def find_correspondence(image_a, image_b, original_image_a,original_image_b,picked_point, patch_size, stride, load_size_a,
-                        image_b_size, num_patches_a, num_patches_b, landmarks_a, landmarks_b, similarities, rotation, num_candidates=10, sim_threshold=0.95):
+                        image_b_size, num_patches_a, num_patches_b, landmarks_a, landmarks_b, similarities, rotation, num_candidates=10, sim_threshold=0.95, distance_threshold=10):
         #Interactive Part
     pts = np.asarray(picked_point)
     print('Picked point at:', pts)
@@ -298,26 +298,32 @@ def find_correspondence(image_a, image_b, original_image_a,original_image_b,pick
             b_center.append([center[0].cpu().numpy(), center[1].cpu().numpy()])
 
     print('Sim:', sims[0])
-    if b_center:
-        try:
+
+    try:
+        if b_center:
+
             best_match_B, predicted_B, min_distance = resolve_ambiguity_tps(pts[0], b_center, landmarks_a, landmarks_b)
 
-            if min_distance>40:
+            if min_distance>distance_threshold:
                 target_point_rotated = best_match_B
                 color = (0, 255, 0, 255)
 
             else:
                 target_point_rotated = b_center[0]
                 color =  (255, 0, 0, 255)
-        except:
-            target_point_rotated = b_center[0]
-            color = (255, 0, 0, 255)
 
-    else:
-        best_match_B = resolve_ambiguity_tps(pts[0], b_center, landmarks_a, landmarks_b)
-        target_point_rotated = best_match_B
-        color =  (0, 0, 255, 255)
+        else:
 
+            best_match_B = resolve_ambiguity_tps(pts[0], b_center, landmarks_a, landmarks_b)
+            target_point_rotated = best_match_B
+            color =  (0, 0, 255, 255)
+
+    except:
+        y_descs_coor, x_descs_coor = torch.div(idxs[0], num_patches_b[1], rounding_mode='floor'), idxs[0] % num_patches_b[1]
+        center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
+                  (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
+        target_point_rotated = [[center[0].cpu().numpy(), center[1].cpu().numpy()]]
+        color = (255, 0, 0, 255)
 
     point_on_origin = [target_point_rotated]
     point_on_origin = rotate_landmarks(image_b_size, point_on_origin, rotation)
@@ -523,6 +529,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_ref_points', default=200, type=int, help="number of reference points to show.")
     parser.add_argument('--num_candidates', default=10, type=int, help="number of target point candidates.")
     parser.add_argument('--sim_threshold', default=0.95, type=float, help="similarity threshold.")
+    parser.add_argument('--distance_threshold', default=10, type=float, help="distance threshold.")
     parser.add_argument('--num_rotation', default=8, type=int, help="number of test rotations, 4 or 8 recommended")
     parser.add_argument('--output_csv', default=False, type=str,help="CSV file to save landmark points.")
     args = parser.parse_args()
