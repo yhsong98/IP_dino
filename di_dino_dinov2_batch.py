@@ -121,14 +121,14 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
         images = [image_folder_path_b]
     #random.shuffle(images)
 
-    for image_path in images[::-1]:
-        start=time.time()
+    for image_path in images:
         if os.path.isdir(image_folder_path_b):
             image_path_b = os.path.join(image_folder_path_b, image_path)
         elif os.path.isfile(image_folder_path_b):
             image_path_b = image_folder_path_b
         batch_b_rotations = extractor.preprocess(image_path_b, load_size, rotate=num_rotations)
 
+        save_path = os.path.join("../data/images/test_drilling/", os.path.basename(image_path))
         descs_b_s = []
         num_patches_b_rotations, load_size_b_rotations = [], []
         for batch in batch_b_rotations:
@@ -243,167 +243,82 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
         for i,rotation_degree in enumerate(rotation_degrees):
             rotations[i]=rotation_degree
         print('rotation_degree:',rotations[fittest_index])
+        print('num_of_landmarks:',scores_num[fittest_index])
         print(image_path)
 
 
         image_pil_b = batch_b_rotations[fittest_index][1]
-        axes[1][0].clear()
-        axes[1][0].set_axis_off()
-        axes[1][0].title.set_text('B (rotated)')
-        axes[1][0].imshow(image_pil_b)
+        image_pil_b.save(save_path)
 
-        real_landmark_points=[]
-        multi_curr_similarities = multi_curr_similarities_rotations[fittest_index]
-
-        for landmark_id, curr_similarities in enumerate(multi_curr_similarities):
-            center_b_candidates = []
-            sims, idxes = torch.topk(curr_similarities.flatten(), num_sim_patches)
-            for sim,idx in zip(sims, idxes):
-                if sim > sim_threshold:
-                    b_y_descs_coor, b_x_descs_coor = torch.div(idx, num_patches_b_rotations[id][1], rounding_mode='floor'), idx % \
-                                                     num_patches_b_rotations[id][1]
-                    center_b = ((b_x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
-                                (b_y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-                    center_b_candidates.append([center_b[0].cpu().numpy(), center_b[1].cpu().numpy()])
-
-            if len(center_b_candidates) > 1 and classify_landmark(center_b_candidates)['label']:
-                real_landmark_points.append(landmark_id)
-
-        a_landmark_points = a_landmark_points_rotations[fittest_index]
-        b_landmark_points = b_landmark_points_rotations[fittest_index]
-        landmark_ids = landmarks_ids_rotation[fittest_index]
-
-        print('num_landmark_points:',len(real_landmark_points))
-        print('num_confident_points:',len(a_landmark_points))
-
-        output_reference = []
-        output_rotated_coords = []
-        radius_A = image_pil_a.size[0] / 80
-        radius_B = image_pil_b.size[0] / 80
-
-        count=0
-        for id, pt in enumerate(zip(a_landmark_points,b_landmark_points)):
-            if landmark_ids[id] in real_landmark_points:
-
-                patch_a= plt.Circle(pt[0], radius_A, color=color_map[count%len(color_map)],alpha=alpha)
-                axes[0][0].add_patch(patch_a)
-                output_reference.append(pt[0])
-                label = axes[0][0].annotate(str(count), xy=pt[0], fontsize=6, ha="center")
-
-                patch_b = plt.Circle(pt[1], radius_B, color=color_map[count%len(color_map)],alpha=alpha)
-                axes[1][0].add_patch(patch_b)
-                output_rotated_coords.append(pt[1])
-                label = axes[1][0].annotate(str(count), xy=pt[1], fontsize=6, ha="center")
-                count += 1
-
-        output_target = []
-        landmarks_on_original = rotate_landmarks(image_pil_b.size,output_rotated_coords,rotations[fittest_index])
-        for id,pt in enumerate(landmarks_on_original):
-            patch_d =plt.Circle(pt,radius_B,color=color_map[id%len(color_map)], alpha=alpha)
-            axes[1][1].add_patch(patch_d)
-            output_target.append(pt)
-            label = axes[1][1].annotate(str(id), xy=pt, fontsize=6, ha="center")
-
-
-        if output_csv:
-            np.savetxt('landmarks_A.csv',output_reference,delimiter=',')
-            np.savetxt('landmarks_B.csv',output_target,delimiter=',')
-            #np.savetxt('rotated_coords.csv',rotated_coords,delimiter=',')
-        plt.draw()
-
-        print('time:', time.time() - start)
-        print("-----------")
+        # axes[1][0].clear()
+        # axes[1][0].set_axis_off()
+        # axes[1][0].title.set_text('B (rotated)')
+        # axes[1][0].imshow(image_pil_b)
+        #
+        # real_landmark_points=[]
+        # multi_curr_similarities = multi_curr_similarities_rotations[fittest_index]
+        #
+        # for landmark_id, curr_similarities in enumerate(multi_curr_similarities):
+        #     center_b_candidates = []
+        #     sims, idxes = torch.topk(curr_similarities.flatten(), num_sim_patches)
+        #     for sim,idx in zip(sims, idxes):
+        #         if sim > sim_threshold:
+        #             b_y_descs_coor, b_x_descs_coor = torch.div(idx, num_patches_b_rotations[id][1], rounding_mode='floor'), idx % \
+        #                                              num_patches_b_rotations[id][1]
+        #             center_b = ((b_x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
+        #                         (b_y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
+        #             center_b_candidates.append([center_b[0].cpu().numpy(), center_b[1].cpu().numpy()])
+        #
+        #     if len(center_b_candidates) > 1 and classify_landmark(center_b_candidates)['label']:
+        #         real_landmark_points.append(landmark_id)
+        #
+        # a_landmark_points = a_landmark_points_rotations[fittest_index]
+        # b_landmark_points = b_landmark_points_rotations[fittest_index]
+        # landmark_ids = landmarks_ids_rotation[fittest_index]
+        #
+        # print('num_landmark_points:',len(real_landmark_points))
+        # print('num_confident_points:',len(a_landmark_points))
+        #
+        # output_reference = []
+        # output_rotated_coords = []
+        # radius_A = image_pil_a.size[0] / 80
+        # radius_B = image_pil_b.size[0] / 80
+        #
+        # count=0
+        # for id, pt in enumerate(zip(a_landmark_points,b_landmark_points)):
+        #     if landmark_ids[id] in real_landmark_points:
+        #
+        #         patch_a= plt.Circle(pt[0], radius_A, color=color_map[count%len(color_map)],alpha=alpha)
+        #         axes[0][0].add_patch(patch_a)
+        #         output_reference.append(pt[0])
+        #         label = axes[0][0].annotate(str(count), xy=pt[0], fontsize=6, ha="center")
+        #
+        #         patch_b = plt.Circle(pt[1], radius_B, color=color_map[count%len(color_map)],alpha=alpha)
+        #         axes[1][0].add_patch(patch_b)
+        #         output_rotated_coords.append(pt[1])
+        #         label = axes[1][0].annotate(str(count), xy=pt[1], fontsize=6, ha="center")
+        #         count += 1
+        #
+        # output_target = []
+        # landmarks_on_original = rotate_landmarks(image_pil_b.size,output_rotated_coords,rotations[fittest_index])
+        # for id,pt in enumerate(landmarks_on_original):
+        #     patch_d =plt.Circle(pt,radius_B,color=color_map[id%len(color_map)], alpha=alpha)
+        #     axes[1][1].add_patch(patch_d)
+        #     output_target.append(pt)
+        #     label = axes[1][1].annotate(str(id), xy=pt, fontsize=6, ha="center")
+        #
+        #
+        # if output_csv:
+        #     np.savetxt('landmarks_A.csv',output_reference,delimiter=',')
+        #     np.savetxt('landmarks_B.csv',output_target,delimiter=',')
+        #     #np.savetxt('rotated_coords.csv',rotated_coords,delimiter=',')
+        # plt.draw()
+        #
+        # print('time:', time.time() - start)
+        # print("-----------")
 
         #Interactive Part
-        pts = np.asarray(plt.ginput(1, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None))
-        visible_patches = []
-        num_patches_b = num_patches_b_rotations[fittest_index]
-        while len(pts) == 1:
-            print('Picked point at:', pts)
 
-            y_coor, x_coor = int(pts[0,1]), int(pts[0,0])
-            new_H = patch_size / stride * (load_size_a[0] // patch_size - 1) + 1
-            new_W = patch_size / stride * (load_size_a[1] // patch_size - 1) + 1
-            y_descs_coor = int(new_H / load_size_a[0] * y_coor)
-            x_descs_coor = int(new_W / load_size_a[1] * x_coor)
-
-            # reset previous marks
-            for patch in visible_patches:
-                patch.remove()
-                visible_patches = []
-
-            # draw chosen point
-            center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
-                      (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-            patch = plt.Circle(center, radius_A, color=(1, 0, 0, 0.75))
-            axes[0][0].add_patch(patch)
-            visible_patches.append(patch)
-
-            raveled_desc_idx = num_patches_a[1] * y_descs_coor + x_descs_coor
-            reveled_desc_idx_including_cls = raveled_desc_idx + 1
-
-            curr_similarities = similarities_rotations[fittest_index][0, 0, reveled_desc_idx_including_cls, 1:]
-
-            sims, idxs = torch.topk(curr_similarities, num_candidates)
-            if sims[0] < sim_threshold:
-                b_center=None
-                y_descs_coor, x_descs_coor = torch.div(idxs[0], num_patches_b[1], rounding_mode='floor'), idxs[0] % \
-                                                                                                      num_patches_b[1]
-                center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
-                          (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-                # patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
-                b_cand = [center[0].cpu().numpy(), center[1].cpu().numpy()]
-
-            else:
-                b_center = []
-                for idx, sim in zip(idxs, sims):
-                    y_descs_coor, x_descs_coor = torch.div(idx, num_patches_b[1], rounding_mode='floor'), idx % num_patches_b[1]
-                    center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
-                              (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-                    # patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
-                    b_center.append([center[0].cpu().numpy(), center[1].cpu().numpy()])
-
-            print('Sim:', sims[0])
-
-            try:
-                if b_center:
-                    best_match_B, predicted_B, min_distance = resolve_ambiguity_mls(pts[0], b_center, output_reference, output_rotated_coords)
-
-                    if min_distance>distance_threshold:
-                        patch = plt.Circle(best_match_B, radius_B, color='green')
-                        axes[1][0].add_patch(patch)
-                        visible_patches.append(patch)
-                        color='green'
-                    else:
-                        patch = plt.Circle(b_center[0], radius_B, color='red')
-                        axes[1][0].add_patch(patch)
-                        visible_patches.append(patch)
-                        color = 'red'
-                else:
-                    best_match_B = resolve_ambiguity_mls(pts[0], b_center, output_reference, output_rotated_coords)
-                    patch = plt.Circle(best_match_B, radius_B, color='blue')
-                    axes[1][0].add_patch(patch)
-                    visible_patches.append(patch)
-                    color = 'blue'
-
-            except:
-                y_descs_coor, x_descs_coor = torch.div(idxs[0], num_patches_b[1], rounding_mode='floor'), idxs[0] % \
-                                                                                                      num_patches_b[1]
-                center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
-                          (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
-                patch = plt.Circle((center[0].cpu().numpy(), center[1].cpu().numpy()), radius_B, color='red')
-                axes[1][0].add_patch(patch)
-                visible_patches.append(patch)
-                color = 'red'
-            point_on_origin = [patch.center]
-            landmarks_on_original = rotate_landmarks(image_pil_b.size, point_on_origin, rotations[fittest_index])
-            patch_origin = plt.Circle(landmarks_on_original[0], radius_B, color=color)
-            axes[1][1].add_patch(patch_origin)
-            visible_patches.append(patch_origin)
-            #extent = axes[1][1].get_window_extent().transformed(fig.dpi_scale_trans.inverted())
-            #fig.savefig('ax11_figure.png', bbox_inches=extent)
-            plt.draw()
-            pts = np.asarray(plt.ginput(1, timeout=-1, mouse_stop=plt.MouseButton.RIGHT, mouse_pop=None))
 
 
 """ taken from https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse"""
@@ -638,8 +553,9 @@ if __name__ == "__main__":
     parser.add_argument('--stride', default=14, type=int, help="stride of first convolution layer. small stride -> higher resolution.")
     parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
-                              Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
-                              vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
+                              Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | dinov2_vits14 | dinov2_vitb14 | 
+                              dinov2_vitl14 | dinov2_vitg14 | vit_small_patch8_224 | 
+                              vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224 ]""")
     parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
                                                                        options: ['key' | 'query' | 'value' | 'token']""")
     parser.add_argument('--layer', default=11, type=int, help="layer to create descriptors from.")
@@ -647,7 +563,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_sim_patches', default=20, type=int, help="number of closest patches to show.")
     parser.add_argument('--num_ref_points', default=200, type=int, help="number of reference points to show.")
     parser.add_argument('--num_candidates', default=10, type=int, help="number of target point candidates.")
-    parser.add_argument('--sim_threshold', default=0.95, type=float, help="similarity threshold.")
+    parser.add_argument('--sim_threshold', default=0.94, type=float, help="similarity threshold.")
     parser.add_argument('--distance_threshold', default=15, type=float, help="distance threshold.")
     parser.add_argument('--num_rotation', default=8, type=int, help="number of test rotations, 4 or 8 recommended")
     parser.add_argument('--output_csv', default=False, type=str,help="CSV file to save landmark points.")
