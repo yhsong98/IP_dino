@@ -9,7 +9,7 @@ The key insight:DINO and DINOv2 descriptors perform poorly under rotational ambi
 2. Select the optimal orientation based on the number of confident landmark matches.
 
 3. Apply Thin Plate Spline (TPS) warping to align the two images geometrically.
-![teaser](./assets/teaser.png)
+![teaser](./assets/ip_dino.png)
 
 
 ## Setup
