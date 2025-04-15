@@ -2,7 +2,7 @@ import argparse
 import os
 import torch
 from sklearn.cluster import DBSCAN
-from extractor_dinov2 import ViTExtractor
+from extractor import ViTExtractor
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib

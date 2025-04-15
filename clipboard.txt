@@ -1,7 +1,0 @@
-reference_image_path = "cat_face/cat1_7_8_9_rgb.png"  # Replace with reference image path
-target_image_path = "cat_face/cat3_7_8_9_rgb.png"
-reference_mask_path = "cat_face/cat1_mask.png"  # Replace with reference mask path
-target_mask_path = "cat_face/cat3_mask.png"  # Replace with target mask path
-
-import matplotlib
-matplotlib.use("Qt5Agg")

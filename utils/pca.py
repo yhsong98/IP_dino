@@ -3,7 +3,7 @@ import PIL.Image
 import numpy
 import torch
 from pathlib import Path
-from extractor_dinov2 import ViTExtractor
+from extractor import ViTExtractor
 from tqdm import tqdm
 import numpy as np
 from PIL import Image
