@@ -54,7 +54,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
 ]
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     extractor = ViTExtractor(model_type, stride, device=device)
-    patch_size = extractor.model.patch_embed.patch_size[0] if isinstance(extractor.model.patch_embed.patch_size,tuple) else extractor.model.patch_embed.patch_size
+    patch_size = extractor.p#base_model.patch_embed.patch_size[0] if isinstance(extractor.model.patch_embed.patch_size,tuple) else extractor.model.patch_embed.patch_size
     #patch_size=14
     image_batch_a, image_pil_a = extractor.preprocess(image_path_a, load_size)
     descs_a = extractor.extract_descriptors(image_batch_a.to(device), layer, facet, bin, include_cls=True)
@@ -636,7 +636,7 @@ if __name__ == "__main__":
     parser.add_argument('--image_b_folder', type=str, default="../data/images/drilling_video_frames_6mkv_rotated/", help='Path to the target images.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="stride of first convolution layer. small stride -> higher resolution.")
-    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
+    parser.add_argument('--model_type', default='dinov2_vitg14', type=str,
                         help="""type of model to extract. 
                               Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")

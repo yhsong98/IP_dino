@@ -43,9 +43,13 @@ class ViTExtractor:
 
         self.model = ViTExtractor.patch_vit_resolution(self.model, stride=stride)
         self.model.eval()
-        self.model.to(self.device)
-        self.p = self.model.patch_embed.patch_size[0] if isinstance(self.model.patch_embed.patch_size,tuple) else self.model.patch_embed.patch_size
-        self.stride = self.model.patch_embed.proj.stride
+        self.model = torch.nn.DataParallel(self.model).to(self.device)
+        #self.model.to(self.device)
+        #self.p = self.model.patch_embed.patch_size[0] if isinstance(self.model.patch_embed.patch_size,tuple) else self.model.patch_embed.patch_size
+        self.p = self.base_model.patch_embed.patch_size[0] if isinstance(self.base_model.patch_embed.patch_size,
+                                                                         tuple) else self.base_model.patch_embed.patch_size
+        #self.stride = self.model.patch_embed.proj.stride
+        self.stride = self.base_model.patch_embed.proj.stride
 
         self.mean = (0.485, 0.456, 0.406) if "dino" in self.model_type else (0.5, 0.5, 0.5)
         self.std = (0.229, 0.224, 0.225) if "dino" in self.model_type else (0.5, 0.5, 0.5)
@@ -54,6 +58,10 @@ class ViTExtractor:
         self.hook_handlers = []
         self.load_size = None
         self.num_patches = None
+
+    @property
+    def base_model(self):
+        return self.model.module if isinstance(self.model, torch.nn.DataParallel) else self.model
 
     @staticmethod
     def create_model(model_type: str) -> nn.Module:
@@ -228,7 +236,7 @@ class ViTExtractor:
         :param layers: layers from which to extract features.
         :param facet: facet to extract. One of the following options: ['key' | 'query' | 'value' | 'token' | 'attn']
         """
-        for block_idx, block in enumerate(self.model.blocks):
+        for block_idx, block in enumerate(self.base_model.blocks):
             if block_idx in layers:
                 if facet == 'token':
                     self.hook_handlers.append(block.register_forward_hook(self._get_hook(facet)))
@@ -370,14 +378,15 @@ def str2bool(v):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Facilitate ViT Descriptor extraction.')
-    parser.add_argument('--image_path', type=str, required=True, help='path of the extracted image.')
-    parser.add_argument('--output_path', type=str, required=True, help='path to file containing extracted descriptors.')
+    parser.add_argument('--image_path', type=str, default="../data/images/landmark_files/cat_5.jpg", help='path of the extracted image.')
+    parser.add_argument('--output_path', type=str, default='./decs.txt', help='path to file containing extracted descriptors.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=2, type=int, help="""stride of first convolution layer. 
                                                               small stride -> higher resolution.""")
-    parser.add_argument('--model_type', default='dino_vits8', type=str,
+    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
-                        Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
+                        Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | dinov2_vits14 | dinov2_vitb14 | 
+                              dinov2_vitl14 | dinov2_vitg14 | vit_small_patch8_224 | vit_small_patch8_224 | 
                         vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")
     parser.add_argument('--facet', default='key', type=str, help="""facet to create descriptors from. 
                                                                     options: ['key' | 'query' | 'value' | 'token']""")
