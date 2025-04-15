@@ -352,7 +352,7 @@ def show_similarity_interactive(image_path_a: str, image_folder_path_b: str, mas
                 center = ((x_descs_coor - 1) * stride + stride + patch_size // 2 - .5,
                           (y_descs_coor - 1) * stride + stride + patch_size // 2 - .5)
                 # patch = plt.Circle(center, radius, color=(1, 0, 0, 0.75))
-                b_cand = [center[0].cpu().numpy(), center[1].cpu().numpy()]
+                #b_cand = [center[0].cpu().numpy(), center[1].cpu().numpy()]
 
             else:
                 b_center = []
@@ -636,7 +636,7 @@ if __name__ == "__main__":
     parser.add_argument('--image_b', type=str, default="../data/images/drilling_video_frames_6mkv_rotated/", help='Path to the target images.')
     parser.add_argument('--load_size', default=224, type=int, help='load size of the input image.')
     parser.add_argument('--stride', default=14, type=int, help="stride of first convolution layer. small stride -> higher resolution.")
-    parser.add_argument('--model_type', default='dinov2_vitg14', type=str,
+    parser.add_argument('--model_type', default='dinov2_vits14', type=str,
                         help="""type of model to extract. 
                               Choose from [dino_vits8 | dino_vits16 | dino_vitb8 | dino_vitb16 | vit_small_patch8_224 | 
                               vit_small_patch16_224 | vit_base_patch8_224 | vit_base_patch16_224]""")

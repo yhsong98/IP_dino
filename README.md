@@ -1,4 +1,4 @@
-# Di_dino
+# IP_dino
 
 We focus on exploring robust semantic correspondence between image pairs using dense visual descriptors extracted from Vision Transformers (ViTs). The system improves robustness under symmetry, unknown rotations, and partial occlusions — common challenges in biomedical imaging and robotics.
 
@@ -26,7 +26,7 @@ You can specify the pretrained model using the `--model_type` flag with the foll
 python matching_dinov2.py ---image_a <image_a_path> --image_b <image_b_path>
 ```
 
-## Di_dino
+## ip_dino
 This script will do:
 * Extracts descriptors from image pairs
 
@@ -40,7 +40,7 @@ This script will do:
 
 Usage:
 ```code
-python di_dino.py ---image_a <image_a_path> --image_b <image_b_path>
+python ip_dino.py ---image_a <image_a_path> --image_b <image_b_path>
 ```
 Options:\
 `--image_b`: You can also input a folder path, the script will iterate the images in the folder;\
