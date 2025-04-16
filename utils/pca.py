@@ -14,7 +14,7 @@ from matplotlib import pyplot as plt
 
 
 def pca(image_paths, load_size: int = 224, layer: int = 11, facet: str = 'key', bin: bool = False, stride: int = 4,
-        model_type: str = 'dino_vits8', n_components: int = 4,
+        model_type: str = 'dinov2_vits14', n_components: int = 3,
         all_together: bool = True) -> List[Tuple[Image.Image, numpy.ndarray]]:
     """
     finding pca of a set of images.
